@@ -1,36 +1,85 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Valt mee
 
-## Getting Started
+A small Next.js dashboard that shows key Netherlands indicators as four cards:
 
-First, run the development server:
+- fuel price (CBS),
+- weather (Open-Meteo),
+- traffic jams (NDW),
+- rail disruptions (NS).
+
+The UI reads data from `GET /api/metrics`, which aggregates external APIs into a card-friendly payload.
+
+## Tech Stack
+
+- Next.js (App Router)
+- React
+- TypeScript
+- Tailwind CSS
+
+## Quick Start
+
+1. Install dependencies:
+
+```bash
+npm install
+```
+
+2. Create `.env.local` (minimum):
+
+```bash
+NS_API_KEY=your_ns_api_key
+```
+
+`NS_API_KEY` is optional. If missing, the NS card is returned as unavailable.
+
+3. Start development server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Scripts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `npm run dev` - run in development mode
+- `npm run build` - create production build
+- `npm run start` - run production server
+- `npm run lint` - run ESLint
 
-## Learn More
+Additional script:
 
-To learn more about Next.js, take a look at the following resources:
+- `node scripts/make-icons.js` - generate PWA icons into `public/icons`
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Environment Variables
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- `NS_API_KEY` - NS Reisinformatie API key (for rail disruption data)
+- `NEXT_PUBLIC_SITE_URL` - public base URL (optional, used by server-side fetch logic)
+- `VERCEL_URL` - automatically set on Vercel
 
-## Deploy on Vercel
+## Data Sources
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- CBS: Euro95 fuel prices
+- Open-Meteo: current weather in Rotterdam
+- NDW: live traffic jam summary
+- NS Reisinformatie API: active disruptions and maintenance
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The app uses `fetch` revalidation (`revalidate`) for external API caching.
+
+## Project Structure
+
+- `app/page.tsx` - homepage and card rendering
+- `app/api/metrics/route.ts` - external data aggregation endpoint
+- `app/layout.tsx` - global layout and metadata
+- `app/manifest.ts` - PWA manifest
+- `app/site-config.ts` - shared site and PWA constants
+- `scripts/make-icons.js` - icon generation script
+
+## Deployment
+
+Vercel is the recommended deployment target.
+
+Before deploying:
+
+1. Add `NS_API_KEY` to your project environment variables.
+2. Ensure `npm run build` passes successfully.

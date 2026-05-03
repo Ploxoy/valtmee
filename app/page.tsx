@@ -5,10 +5,23 @@ type SparkPoint = {
 
 type Metric = {
   value: string;
-  label: string;
   note: string;
   href: string;
   history?: SparkPoint[];
+};
+
+type MetricPayload = {
+  value: string;
+  note: string;
+  history: SparkPoint[];
+};
+
+type MetricsResponse = {
+  benzine: MetricPayload;
+  file: MetricPayload;
+  weer: MetricPayload;
+  storingen: MetricPayload;
+  sources: string[];
 };
 
 function getBaseUrl() {
@@ -32,7 +45,16 @@ async function getMetrics() {
     throw new Error("Failed to fetch metrics");
   }
 
-  return res.json();
+  return (await res.json()) as MetricsResponse;
+}
+
+function toMetric(payload: MetricPayload, href: string): Metric {
+  return {
+    value: payload.value,
+    note: payload.note,
+    history: payload.history,
+    href,
+  };
 }
 
 function Sparkline({ points }: { points: SparkPoint[] }) {
@@ -293,37 +315,13 @@ function SpoorCard({ item }: { item: Metric }) {
 export default async function Home() {
   const data = await getMetrics();
 
-  const fuel: Metric = {
-    value: data.benzine.value,
-    label: "benzine",
-    note: data.benzine.note,
-    history: data.benzine.history,
-    href: "https://www.cbs.nl/nl-nl/cijfers/detail/80416ned",
-  };
-
-  const traffic: Metric = {
-    value: data.file.value,
-    label: "file",
-    note: data.file.note,
-    history: data.file.history,
-    href: "https://file.ndw.nu/",
-  };
-
-  const weather: Metric = {
-    value: data.weer.value,
-    label: "weer",
-    note: data.weer.note,
-    history: data.weer.history,
-    href: "https://open-meteo.com/en/docs",
-  };
-
-  const spoor: Metric = {
-    value: data.storingen.value,
-    label: "spoor",
-    note: data.storingen.note,
-    history: data.storingen.history,
-    href: "https://www.ns.nl/reisinformatie/actuele-situatie-op-het-spoor/",
-  };
+  const fuel = toMetric(data.benzine, "https://www.cbs.nl/nl-nl/cijfers/detail/80416ned");
+  const traffic = toMetric(data.file, "https://file.ndw.nu/");
+  const weather = toMetric(data.weer, "https://open-meteo.com/en/docs");
+  const spoor = toMetric(
+    data.storingen,
+    "https://www.ns.nl/reisinformatie/actuele-situatie-op-het-spoor/"
+  );
 
   const { storingen } = parseSpoor(spoor.value);
 

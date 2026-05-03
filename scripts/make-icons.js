@@ -6,6 +6,13 @@ const sharp = require("sharp");
 const outDir = path.join(process.cwd(), "public", "icons");
 fs.mkdirSync(outDir, { recursive: true });
 
+const iconSpecs = [
+  { fileName: "icon-192.png", size: 192 },
+  { fileName: "icon-512.png", size: 512 },
+  { fileName: "maskable-512.png", size: 512, maskable: true },
+  { fileName: "apple-touch-icon.png", size: 180 },
+];
+
 function svg(size, maskable = false) {
   const padding = maskable ? size * 0.18 : size * 0.08;
 
@@ -38,10 +45,11 @@ function svg(size, maskable = false) {
 }
 
 async function main() {
-  await sharp(Buffer.from(svg(192))).png().toFile(path.join(outDir, "icon-192.png"));
-  await sharp(Buffer.from(svg(512))).png().toFile(path.join(outDir, "icon-512.png"));
-  await sharp(Buffer.from(svg(512, true))).png().toFile(path.join(outDir, "maskable-512.png"));
-  await sharp(Buffer.from(svg(180))).png().toFile(path.join(outDir, "apple-touch-icon.png"));
+  await Promise.all(
+    iconSpecs.map(({ fileName, size, maskable }) =>
+      sharp(Buffer.from(svg(size, maskable))).png().toFile(path.join(outDir, fileName))
+    )
+  );
 
   console.log("Icons generated in public/icons");
 }

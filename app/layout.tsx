@@ -1,13 +1,19 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import {
+  SITE_DESCRIPTION,
+  SITE_ICONS,
+  SITE_NAME,
+  SITE_THEME_COLOR,
+} from "./site-config";
 
 export const metadata: Metadata = {
-  title: "Valt mee",
-  description: "Nederland in cijfers. Benzine, weer, files en spoor.",
-  applicationName: "Valt mee",
+  title: SITE_NAME,
+  description: SITE_DESCRIPTION,
+  applicationName: SITE_NAME,
   appleWebApp: {
     capable: true,
-    title: "Valt mee",
+    title: SITE_NAME,
     statusBarStyle: "black-translucent",
   },
   formatDetection: {
@@ -15,16 +21,16 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: "/favicon.ico" },
-      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+      { url: SITE_ICONS.favicon },
+      { url: SITE_ICONS.icon192, sizes: "192x192", type: "image/png" },
+      { url: SITE_ICONS.icon512, sizes: "512x512", type: "image/png" },
     ],
-    apple: [{ url: "/icons/apple-touch-icon.png" }],
+    apple: [{ url: SITE_ICONS.appleTouch }],
   },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0a0a0a",
+  themeColor: SITE_THEME_COLOR,
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,

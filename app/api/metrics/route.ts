@@ -1,5 +1,3 @@
-import { gunzipSync } from "node:zlib";
-
 export const runtime = "nodejs";
 
 type OpenMeteoResponse = {
@@ -19,6 +17,34 @@ type SparkPoint = {
   date: string;
   value: number;
 };
+
+type MetricPayload = {
+  value: string;
+  note: string;
+  history: SparkPoint[];
+};
+
+type NdwTrafficRow = {
+  distanceInMeters: number;
+  versionTime?: string;
+};
+
+type NsDisruptionRow = {
+  isActive?: boolean;
+  type?: string;
+};
+
+type NsDisruptionsResponse = {
+  disruptions?: NsDisruptionRow[];
+};
+
+function metric(value: string, note: string, history: SparkPoint[] = []): MetricPayload {
+  return { value, note, history };
+}
+
+function unavailableMetric(note: string): MetricPayload {
+  return metric("—", note);
+}
 
 function windKmhToBft(kmh: number): number {
   const limits = [1, 5, 11, 19, 28, 38, 49, 61, 74, 88, 102, 117];
@@ -54,11 +80,7 @@ async function getWeather() {
   const wind = windKmhToBft(json.current.wind_speed_10m);
   const rain = json.current.precipitation;
 
-  return {
-    value: `${temp}° / ${wind} Bft`,
-    note: rain > 0 ? `${rain} mm regen` : "droog",
-    history: [] as SparkPoint[],
-  };
+  return metric(`${temp}° / ${wind} Bft`, rain > 0 ? `${rain} mm regen` : "droog");
 }
 
 async function getFuelPrice() {
@@ -104,15 +126,12 @@ async function getFuelPrice() {
     value: row.BenzineEuro95_1,
   }));
 
-  return {
-    value: `€${latest.BenzineEuro95_1.toFixed(2).replace(".", ",")}`,
-    note: `Euro95 · CBS · ${formatCbsDate(String(latest.Perioden))}`,
-    history,
-  };
+  return metric(
+    `€${latest.BenzineEuro95_1.toFixed(2).replace(".", ",")}`,
+    `Euro95 · CBS · ${formatCbsDate(String(latest.Perioden))}`,
+    history
+  );
 }
-
-
-
 async function getTraffic() {
   const url =
     "https://datafusion.ndw.nu/api/rest/traffic-jam/v1/actual/traffic-jam-latest-summary";
@@ -125,14 +144,7 @@ async function getTraffic() {
     throw new Error(`NDW traffic request failed: ${res.status}`);
   }
 
-  const rows = (await res.json()) as Array<{
-    distanceInMeters: number;
-    provinces?: string[];
-    roadNumber?: string;
-    source?: string;
-    trajectory?: string;
-    versionTime?: string;
-  }>;
+  const rows = (await res.json()) as NdwTrafficRow[];
 
   if (!Array.isArray(rows)) {
     throw new Error("NDW traffic data is not an array");
@@ -143,11 +155,7 @@ async function getTraffic() {
   );
 
   if (!validRows.length) {
-    return {
-      value: "0 km",
-      note: "geen files · NDW",
-      history: [] as SparkPoint[],
-    };
+    return metric("0 km", "geen files · NDW");
   }
 
   const totalMeters = validRows.reduce(
@@ -174,22 +182,29 @@ async function getTraffic() {
           timeZone: "Europe/Amsterdam",
         });
 
-  return {
-    value: `${km} km`,
-    note: `${validRows.length} files · NDW · ${time}`,
-    history: [] as SparkPoint[],
-  };
+  return metric(`${km} km`, `${validRows.length} files · NDW · ${time}`);
+}
+
+function toDisruptions(payload: unknown): NsDisruptionRow[] {
+  if (Array.isArray(payload)) {
+    return payload as NsDisruptionRow[];
+  }
+
+  if (payload && typeof payload === "object") {
+    const withDisruptions = payload as NsDisruptionsResponse;
+    if (Array.isArray(withDisruptions.disruptions)) {
+      return withDisruptions.disruptions;
+    }
+  }
+
+  return [];
 }
 
 async function getTrainDisruptions() {
   const apiKey = process.env.NS_API_KEY;
 
   if (!apiKey) {
-    return {
-      value: "—",
-      note: "NS key ontbreekt",
-      history: [] as SparkPoint[],
-    };
+    return unavailableMetric("NS key ontbreekt");
   }
 
   const url =
@@ -206,85 +221,46 @@ async function getTrainDisruptions() {
     throw new Error(`NS disruptions request failed: ${res.status}`);
   }
 
-  const json = await res.json();
+  const disruptions = toDisruptions(await res.json());
+  const active = disruptions.filter((item) => item.isActive === true);
 
-  const disruptions = Array.isArray(json)
-    ? json
-    : Array.isArray(json.disruptions)
-      ? json.disruptions
-      : [];
-
-  const active = disruptions.filter((item: any) => item.isActive === true);
-
-  const storingen = active.filter((item: any) => {
+  const storingen = active.filter((item) => {
     const type = String(item.type ?? "").toUpperCase();
     return type === "DISRUPTION";
   }).length;
 
-  const werkzaamheden = active.filter((item: any) => {
+  const werkzaamheden = active.filter((item) => {
     const type = String(item.type ?? "").toUpperCase();
     return type === "MAINTENANCE";
   }).length;
 
-  return {
-    value: `${storingen} / ${werkzaamheden}`,
-    note: "actieve meldingen · NS",
-    history: [] as SparkPoint[],
-  };
+  return metric(`${storingen} / ${werkzaamheden}`, "actieve meldingen · NS");
+}
+
+async function resolveMetric(
+  name: string,
+  fetchMetric: () => Promise<MetricPayload>,
+  fallback: MetricPayload
+): Promise<MetricPayload> {
+  try {
+    return await fetchMetric();
+  } catch (error) {
+    console.error(`[metrics] ${name} failed`, error);
+    return fallback;
+  }
 }
 
 export async function GET() {
-  let weather = {
-    value: "—",
-    note: "weer niet beschikbaar",
-    history: [] as SparkPoint[],
-  };
-
-  let fuel = {
-    value: "—",
-    note: "benzine niet beschikbaar",
-    history: [] as SparkPoint[],
-  };
-
-  let traffic = {
-    value: "—",
-    note: "files niet beschikbaar",
-    history: [] as SparkPoint[],
-  };
-
-  let trains = {
-    value: "—",
-    note: "NS niet beschikbaar",
-    history: [] as SparkPoint[],
-  };
-
-  try {
-    weather = await getWeather();
-  } catch (error) {
-    console.error(error);
-  }
-
-  try {
-    fuel = await getFuelPrice();
-  } catch (error) {
-    console.error(error);
-  }
-
-  try {
-    traffic = await getTraffic();
-  } catch (error) {
-    console.error(error);
-  }
-
-  try {
-    trains = await getTrainDisruptions();
-  } catch (error) {
-    console.error(error);
-  }
+  const [weather, fuel, traffic, trains] = await Promise.all([
+    resolveMetric("weather", getWeather, unavailableMetric("weer niet beschikbaar")),
+    resolveMetric("fuel", getFuelPrice, unavailableMetric("benzine niet beschikbaar")),
+    resolveMetric("traffic", getTraffic, unavailableMetric("files niet beschikbaar")),
+    resolveMetric("trains", getTrainDisruptions, unavailableMetric("NS niet beschikbaar")),
+  ]);
 
   const data = {
     benzine: fuel,
-    hypotheek: { value: "4,03%", note: "gemiddeld", history: [] },
+    hypotheek: metric("4,03%", "gemiddeld"),
     file: traffic,
     weer: weather,
     storingen: trains,
