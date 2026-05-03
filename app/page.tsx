@@ -37,15 +37,67 @@ function getBaseUrl() {
 }
 
 async function getMetrics() {
-  const res = await fetch(`${getBaseUrl()}/api/metrics`, {
-    cache: "no-store",
-  });
+  try {
+    const res = await fetch(`${getBaseUrl()}/api/metrics`, {
+      cache: "no-store",
+    });
 
-  if (!res.ok) {
-    throw new Error("Failed to fetch metrics");
+    if (!res.ok) {
+      console.error("Metrics fetch failed:", res.status, res.statusText);
+
+      return {
+        benzine: {
+          value: "—",
+          note: "niet beschikbaar",
+          history: [],
+        },
+        file: {
+          value: "—",
+          note: "niet beschikbaar",
+          history: [],
+        },
+        weer: {
+          value: "—",
+          note: "niet beschikbaar",
+          history: [],
+        },
+        storingen: {
+          value: "— / —",
+          note: "niet beschikbaar",
+          history: [],
+        },
+        sources: ["CBS", "Open-Meteo", "NDW", "NS"],
+      };
+    }
+
+    return res.json();
+  } catch (error) {
+    console.error("Metrics fetch crashed:", error);
+
+    return {
+      benzine: {
+        value: "—",
+        note: "niet beschikbaar",
+        history: [],
+      },
+      file: {
+        value: "—",
+        note: "niet beschikbaar",
+        history: [],
+      },
+      weer: {
+        value: "—",
+        note: "niet beschikbaar",
+        history: [],
+      },
+      storingen: {
+        value: "— / —",
+        note: "niet beschikbaar",
+        history: [],
+      },
+      sources: ["CBS", "Open-Meteo", "NDW", "NS"],
+    };
   }
-
-  return (await res.json()) as MetricsResponse;
 }
 
 function toMetric(payload: MetricPayload, href: string): Metric {
