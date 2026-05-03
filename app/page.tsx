@@ -25,20 +25,30 @@ type MetricsResponse = {
 };
 
 function getBaseUrl() {
-  if (process.env.VERCEL_URL) {
-    return `https://${process.env.VERCEL_URL}`;
-  }
-
   if (process.env.NEXT_PUBLIC_SITE_URL) {
     return process.env.NEXT_PUBLIC_SITE_URL;
+  }
+
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
   }
 
   return "http://localhost:3000";
 }
 
+function fallbackMetrics() {
+  return {
+    benzine: { value: "—", note: "niet beschikbaar", history: [] },
+    file: { value: "—", note: "niet beschikbaar", history: [] },
+    weer: { value: "—", note: "niet beschikbaar", history: [] },
+    storingen: { value: "— / —", note: "niet beschikbaar", history: [] },
+    sources: ["CBS", "Open-Meteo", "NDW", "NS"],
+  };
+}
+
 async function getMetrics() {
   try {
-    const res = await fetch("/api/metrics", {
+    const res = await fetch(`${getBaseUrl()}/api/metrics`, {
       cache: "no-store",
     });
 
@@ -54,15 +64,9 @@ async function getMetrics() {
   }
 }
 
-function fallbackMetrics() {
-  return {
-    benzine: { value: "—", note: "niet beschikbaar", history: [] },
-    file: { value: "—", note: "niet beschikbaar", history: [] },
-    weer: { value: "—", note: "niet beschikbaar", history: [] },
-    storingen: { value: "— / —", note: "niet beschikbaar", history: [] },
-    sources: ["CBS", "Open-Meteo", "NDW", "NS"],
-  };
-}
+
+
+
 
 function toMetric(payload: MetricPayload, href: string): Metric {
   return {
