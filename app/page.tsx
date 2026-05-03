@@ -1,3 +1,5 @@
+import { headers } from "next/headers";
+
 type SparkPoint = {
   date: string;
   value: number;
@@ -24,7 +26,24 @@ type MetricsResponse = {
   sources: string[];
 };
 
-function getBaseUrl() {
+function fallbackMetrics(): MetricsResponse {
+  return {
+    benzine: { value: "—", note: "niet beschikbaar", history: [] },
+    file: { value: "—", note: "niet beschikbaar", history: [] },
+    weer: { value: "—", note: "niet beschikbaar", history: [] },
+    storingen: { value: "— / —", note: "niet beschikbaar", history: [] },
+    sources: ["CBS", "Open-Meteo", "NDW", "NS"],
+  };
+}
+
+function getRequestOrigin(incomingHeaders: Headers) {
+  const host = incomingHeaders.get("x-forwarded-host") ?? incomingHeaders.get("host");
+  const proto = incomingHeaders.get("x-forwarded-proto") ?? "https";
+
+  if (host) {
+    return `${proto}://${host}`;
+  }
+
   if (process.env.NEXT_PUBLIC_SITE_URL) {
     return process.env.NEXT_PUBLIC_SITE_URL;
   }
@@ -36,20 +55,13 @@ function getBaseUrl() {
   return "http://localhost:3000";
 }
 
-function fallbackMetrics() {
-  return {
-    benzine: { value: "—", note: "niet beschikbaar", history: [] },
-    file: { value: "—", note: "niet beschikbaar", history: [] },
-    weer: { value: "—", note: "niet beschikbaar", history: [] },
-    storingen: { value: "— / —", note: "niet beschikbaar", history: [] },
-    sources: ["CBS", "Open-Meteo", "NDW", "NS"],
-  };
-}
-
-async function getMetrics() {
+async function getMetrics(): Promise<MetricsResponse> {
   try {
-    const res = await fetch(`${getBaseUrl()}/api/metrics`, {
+    const incomingHeaders = await headers();
+    const cookie = incomingHeaders.get("cookie");
+    const res = await fetch(`${getRequestOrigin(incomingHeaders)}/api/metrics`, {
       cache: "no-store",
+      headers: cookie ? { cookie } : undefined,
     });
 
     if (!res.ok) {
@@ -57,17 +69,12 @@ async function getMetrics() {
       return fallbackMetrics();
     }
 
-    return res.json();
+    return (await res.json()) as MetricsResponse;
   } catch (error) {
     console.error("Metrics fetch crashed:", error);
     return fallbackMetrics();
   }
 }
-
-
-
-
-
 function toMetric(payload: MetricPayload, href: string): Metric {
   return {
     value: payload.value,
