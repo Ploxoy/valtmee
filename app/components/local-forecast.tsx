@@ -249,7 +249,7 @@ export default function LocalForecast() {
 
   useEffect(() => {
     if (!("geolocation" in navigator)) {
-      setStatus("unsupported");
+      queueMicrotask(() => setStatus("unsupported"));
       return;
     }
 
@@ -274,11 +274,19 @@ export default function LocalForecast() {
           setStatus("denied");
         }
 
+        if (state === "granted") {
+          requestLocation();
+        }
+
         permissionStatus.onchange = () => {
           const nextState = permissionStatus?.state;
 
           if (nextState === "denied") {
             setStatus("denied");
+          }
+
+          if (nextState === "granted") {
+            requestLocation();
           }
         };
       } catch (error) {

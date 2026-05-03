@@ -18,34 +18,81 @@ type SparkPoint = {
   value: number;
 };
 
+type TrafficJamDetail = {
+  roadNumber: string;
+  trajectory: string;
+  province: string;
+  distanceKm: number;
+  updatedAt: string;
+};
+
+type TrafficDetails = {
+  count: number;
+  totalKm: number;
+  averageKm: number;
+  updatedAt: string;
+  staleCount: number;
+  jams: TrafficJamDetail[];
+};
+
+type TrainMessage = {
+  title: string;
+  type: string;
+  route: string;
+};
+
+type TrainDetails = {
+  totalActive: number;
+  disruptions: TrainMessage[];
+  maintenance: TrainMessage[];
+  calamities: TrainMessage[];
+};
+
 type MetricPayload = {
   value: string;
   note: string;
   history: SparkPoint[];
   trend?: string;
+  details?: {
+    traffic?: TrafficDetails;
+    trains?: TrainDetails;
+  };
 };
 
 type NdwTrafficRow = {
   distanceInMeters: number;
+  provinces?: string[];
+  roadNumber?: string;
+  trajectory?: string;
   versionTime?: string;
 };
 
 type NsDisruptionRow = {
+  id?: string;
   isActive?: boolean;
+  title?: string;
+  topic?: string;
   type?: string;
+  route?: string;
+  routes?: string[];
+  station?: string;
 };
 
 type NsDisruptionsResponse = {
   disruptions?: NsDisruptionRow[];
 };
 
+const trafficFreshnessMs = 6 * 60 * 60 * 1000;
+const futureSkewMs = 5 * 60 * 1000;
+
 function metric(
   value: string,
   note: string,
   history: SparkPoint[] = [],
-  trend?: string
+  trend?: string,
+  details?: MetricPayload["details"]
 ): MetricPayload {
-  return { value, note, history, trend };
+  return { value, note, history, trend, details };
 }
 
 function unavailableMetric(note: string): MetricPayload {
@@ -62,6 +109,17 @@ function formatCbsDate(rawDate: string): string {
   return rawDate.length === 8
     ? `${rawDate.slice(0, 4)}-${rawDate.slice(4, 6)}-${rawDate.slice(6, 8)}`
     : rawDate;
+}
+
+function formatAmsterdamDateTime(timestamp: number): string {
+  return new Date(timestamp).toLocaleString("nl-NL", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Europe/Amsterdam",
+  });
 }
 
 async function getWeather() {
@@ -177,14 +235,45 @@ async function getTraffic() {
     return metric("0 km", "geen files · NDW");
   }
 
-  const totalMeters = validRows.reduce(
+  const now = Date.now();
+  const freshRows = validRows.filter((row) => {
+    if (!row.versionTime) return false;
+
+    const timestamp = new Date(row.versionTime).getTime();
+    if (!Number.isFinite(timestamp)) return false;
+    if (timestamp > now + futureSkewMs) return false;
+
+    return now - timestamp <= trafficFreshnessMs;
+  });
+  const staleCount = validRows.length - freshRows.length;
+
+  if (!freshRows.length) {
+    return metric(
+      "—",
+      "NDW verouderd",
+      [],
+      undefined,
+      {
+        traffic: {
+          count: 0,
+          totalKm: 0,
+          averageKm: 0,
+          updatedAt: "geen actuele data",
+          staleCount,
+          jams: [],
+        },
+      }
+    );
+  }
+
+  const totalMeters = freshRows.reduce(
     (sum, row) => sum + Number(row.distanceInMeters),
     0
   );
 
   const km = Math.round(totalMeters / 1000);
 
-  const validTimes = validRows
+  const validTimes = freshRows
     .map((row) =>
       row.versionTime ? new Date(row.versionTime).getTime() : NaN
     )
@@ -195,13 +284,42 @@ async function getTraffic() {
   const time =
     newestTime === null
       ? "actueel"
-      : new Date(newestTime).toLocaleTimeString("nl-NL", {
-          hour: "2-digit",
-          minute: "2-digit",
-          timeZone: "Europe/Amsterdam",
-        });
+      : formatAmsterdamDateTime(newestTime);
 
-  return metric(`${km} km`, `${validRows.length} files · NDW · ${time}`);
+  const sortedRows = [...freshRows].sort(
+    (a, b) => Number(b.distanceInMeters) - Number(a.distanceInMeters)
+  );
+
+  const details: TrafficDetails = {
+    count: freshRows.length,
+    totalKm: km,
+    averageKm: Number((km / freshRows.length).toFixed(1)),
+    updatedAt: time,
+    staleCount,
+    jams: sortedRows.slice(0, 7).map((row) => {
+      const timestamp = row.versionTime
+        ? new Date(row.versionTime).getTime()
+        : NaN;
+
+      return {
+        roadNumber: row.roadNumber ?? "weg",
+        trajectory: row.trajectory ?? "traject onbekend",
+        province: row.provinces?.[0] ?? "Nederland",
+        distanceKm: Number((Number(row.distanceInMeters) / 1000).toFixed(1)),
+        updatedAt: Number.isFinite(timestamp)
+          ? formatAmsterdamDateTime(timestamp)
+          : "onbekend",
+      };
+    }),
+  };
+
+  return metric(
+    `${km} km`,
+    `${freshRows.length} files · NDW · ${time}`,
+    [],
+    undefined,
+    { traffic: details }
+  );
 }
 
 function toDisruptions(payload: unknown): NsDisruptionRow[] {
@@ -217,6 +335,18 @@ function toDisruptions(payload: unknown): NsDisruptionRow[] {
   }
 
   return [];
+}
+
+function toTrainMessage(item: NsDisruptionRow): TrainMessage {
+  const type = String(item.type ?? "melding").toUpperCase();
+  const route =
+    item.route ??
+    item.routes?.join(" · ") ??
+    item.station ??
+    "traject onbekend";
+  const title = item.title ?? item.topic ?? item.id ?? "NS melding";
+
+  return { title, type, route };
 }
 
 async function getTrainDisruptions() {
@@ -240,20 +370,38 @@ async function getTrainDisruptions() {
     throw new Error(`NS disruptions request failed: ${res.status}`);
   }
 
-  const disruptions = toDisruptions(await res.json());
-  const active = disruptions.filter((item) => item.isActive === true);
+  const disruptionRows = toDisruptions(await res.json());
+  const active = disruptionRows.filter((item) => item.isActive === true);
 
-  const storingen = active.filter((item) => {
+  const disruptions = active.filter((item) => {
     const type = String(item.type ?? "").toUpperCase();
     return type === "DISRUPTION";
-  }).length;
+  });
 
   const werkzaamheden = active.filter((item) => {
     const type = String(item.type ?? "").toUpperCase();
     return type === "MAINTENANCE";
-  }).length;
+  });
 
-  return metric(`${storingen} / ${werkzaamheden}`, "actieve meldingen · NS");
+  const calamities = active.filter((item) => {
+    const type = String(item.type ?? "").toUpperCase();
+    return type === "CALAMITY";
+  });
+
+  const details: TrainDetails = {
+    totalActive: active.length,
+    disruptions: disruptions.slice(0, 8).map(toTrainMessage),
+    maintenance: werkzaamheden.slice(0, 10).map(toTrainMessage),
+    calamities: calamities.slice(0, 5).map(toTrainMessage),
+  };
+
+  return metric(
+    `${disruptions.length} / ${werkzaamheden.length}`,
+    "actieve meldingen · NS",
+    [],
+    undefined,
+    { trains: details }
+  );
 }
 
 async function resolveMetric(

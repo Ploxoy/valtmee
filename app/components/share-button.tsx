@@ -30,10 +30,10 @@ function buildReceipt({
     "        valtmee.nl",
     "           BON",
     "************************",
-    receiptLine("WEER", weather),
     receiptLine("BENZINE", fuel),
     receiptLine("FILE", traffic),
     receiptLine("SPOOR", trains),
+    receiptLine("WEER", weather),
     "------------------------",
     " TOTAAL: HET VALT WEL MEE",
     "************************",
@@ -62,12 +62,13 @@ export default function ShareButton(props: ShareButtonProps) {
     };
 
     try {
-      if (navigator.share) {
-        await navigator.share(shareData);
-      } else {
-        await copyReceipt();
-      }
+      await navigator.share(shareData);
     } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        setIsOpen(false);
+        return;
+      }
+
       console.error(error);
       setStatus("error");
       resetStatus();
@@ -77,7 +78,7 @@ export default function ShareButton(props: ShareButtonProps) {
   };
 
   const toggleShare = async () => {
-    if (navigator.share) {
+    if ("share" in navigator) {
       await shareNative();
       return;
     }
@@ -109,14 +110,19 @@ export default function ShareButton(props: ShareButtonProps) {
       <button
         type="button"
         onClick={toggleShare}
+        aria-label="Maak dagbon"
         aria-expanded={isOpen}
-        className="inline-flex items-center rounded-full border border-white/15 bg-white/[0.04] px-4 py-2 text-sm font-medium text-neutral-300 transition hover:border-white/30 hover:text-white focus:outline-none focus:ring-2 focus:ring-white/30"
+        className="text-sm font-medium text-neutral-400 underline-offset-4 transition hover:text-neutral-200 hover:underline focus:outline-none focus:ring-2 focus:ring-white/30"
       >
-        {status === "copied" ? "Gekopieerd" : status === "error" ? "Delen mislukt" : "Delen"}
+        {status === "copied"
+          ? "gekopieerd"
+          : status === "error"
+            ? "mislukt"
+            : "dagbon"}
       </button>
 
       {isOpen && (
-        <div className="absolute left-0 z-20 mt-2 w-40 overflow-hidden rounded-2xl border border-white/10 bg-neutral-950/95 p-1 text-sm shadow-2xl shadow-black/40 backdrop-blur">
+        <div className="absolute bottom-full left-0 z-20 mb-2 w-40 overflow-hidden rounded-2xl border border-white/10 bg-neutral-950/95 p-1 text-sm shadow-2xl shadow-black/40 backdrop-blur">
           <button
             type="button"
             onClick={shareTelegram}
