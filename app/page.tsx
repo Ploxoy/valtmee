@@ -1,4 +1,5 @@
 import { headers } from "next/headers";
+import LocalForecast from "./components/local-forecast";
 
 export const dynamic = "force-dynamic";
 
@@ -386,6 +387,8 @@ export default async function Home() {
           <WeatherCard item={weather} />
           <SpoorCard item={spoor} />
         </div>
+
+        <LocalForecast />
 
         <footer className="mt-12 flex flex-col gap-2 text-sm text-neutral-600 sm:flex-row sm:items-center sm:justify-between">
           <span>{data.sources.join(" · ")}</span>
