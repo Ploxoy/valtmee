@@ -1,5 +1,7 @@
 import { headers } from "next/headers";
 
+export const dynamic = "force-dynamic";
+
 type SparkPoint = {
   date: string;
   value: number;
