@@ -1,65 +1,370 @@
-import Image from "next/image";
+type SparkPoint = {
+  date: string;
+  value: number;
+};
 
-export default function Home() {
+type Metric = {
+  value: string;
+  label: string;
+  note: string;
+  href: string;
+  history?: SparkPoint[];
+};
+
+function getBaseUrl() {
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
+  }
+
+  if (process.env.NEXT_PUBLIC_SITE_URL) {
+    return process.env.NEXT_PUBLIC_SITE_URL;
+  }
+
+  return "http://localhost:3000";
+}
+
+async function getMetrics() {
+  const res = await fetch(`${getBaseUrl()}/api/metrics`, {
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    throw new Error("Failed to fetch metrics");
+  }
+
+  return res.json();
+}
+
+function Sparkline({ points }: { points: SparkPoint[] }) {
+  if (!points || points.length < 2) return null;
+
+  const width = 220;
+  const height = 52;
+  const padding = 4;
+
+  const values = points.map((point) => point.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+
+  const path = points
+    .map((point, index) => {
+      const x =
+        padding + (index / (points.length - 1)) * (width - padding * 2);
+
+      const y =
+        height -
+        padding -
+        ((point.value - min) / range) * (height - padding * 2);
+
+      return `${index === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`;
+    })
+    .join(" ");
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      className="mt-7 h-14 w-full overflow-visible opacity-80"
+      role="img"
+      aria-label="trend"
+    >
+      <path
+        d={path}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="text-neutral-500"
+      />
+    </svg>
+  );
+}
+
+function StatusBadge({ children }: { children: string }) {
+  return (
+    <span className="inline-flex w-fit rounded-full border border-white/10 bg-white/[0.055] px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-neutral-400">
+      {children}
+    </span>
+  );
+}
+
+function ExternalHint() {
+  return (
+    <span className="absolute right-6 top-6 text-sm text-neutral-600 transition group-hover:text-neutral-400">
+      ↗
+    </span>
+  );
+}
+
+function CardShell({
+  href,
+  children,
+}: {
+  href: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="group relative block rounded-[2rem] border border-white/10 bg-white/[0.045] p-7 min-h-72 shadow-2xl shadow-black/30 backdrop-blur transition duration-300 hover:-translate-y-1 hover:border-white/20 hover:bg-white/[0.07] focus:outline-none focus:ring-2 focus:ring-white/30"
+    >
+      <ExternalHint />
+      {children}
+    </a>
+  );
+}
+
+function getFileStatus(fileValue: string) {
+  const km = Number.parseInt(fileValue, 10);
+
+  if (!Number.isFinite(km) || km === 0) return "rustig";
+  if (km < 50) return "valt mee";
+  if (km < 150) return "druk";
+  return "chaos";
+}
+
+function getWeatherStatus(weatherNote: string) {
+  const note = weatherNote.toLowerCase();
+
+  if (note.includes("regen")) return "nat";
+  if (note.includes("droog")) return "droog";
+  return "weer";
+}
+
+function getSpoorStatus(storingen: number) {
+  if (storingen === 0) return "rustig";
+  if (storingen <= 3) return "valt mee";
+  if (storingen <= 10) return "onrustig";
+  return "chaos";
+}
+
+function parseWeather(value: string) {
+  const [tempRaw, windRaw] = value.split("/");
+  return {
+    temperature: tempRaw?.trim() || value,
+    wind: windRaw?.trim() || "—",
+  };
+}
+
+function parseSpoor(value: string) {
+  const [storingenRaw, werkzaamhedenRaw] = String(value).split("/");
+
+  const storingen = Number.parseInt(storingenRaw?.trim() || "0", 10);
+  const werkzaamheden = Number.parseInt(werkzaamhedenRaw?.trim() || "0", 10);
+
+  return {
+    storingen: Number.isFinite(storingen) ? storingen : 0,
+    werkzaamheden: Number.isFinite(werkzaamheden) ? werkzaamheden : 0,
+  };
+}
+
+function buildSummary({
+  fileValue,
+  weatherNote,
+  storingen,
+}: {
+  fileValue: string;
+  weatherNote: string;
+  storingen: number;
+}) {
+  const fileStatus = getFileStatus(fileValue);
+  const weatherStatus = getWeatherStatus(weatherNote);
+  const spoorStatus = getSpoorStatus(storingen);
+
+  const road =
+    fileStatus === "rustig"
+      ? "rustig op de weg"
+      : fileStatus === "valt mee"
+        ? "beperkte files"
+        : fileStatus === "druk"
+          ? "druk op de weg"
+          : "veel files";
+
+  const weather =
+    weatherStatus === "nat"
+      ? "nat weer"
+      : weatherStatus === "droog"
+        ? "droog weer"
+        : "gewoon weer";
+
+  const spoor =
+    spoorStatus === "rustig"
+      ? "weinig spoorstoringen"
+      : spoorStatus === "valt mee"
+        ? "enkele spoorstoringen"
+        : spoorStatus === "onrustig"
+          ? "onrustig op het spoor"
+          : "veel spoorproblemen";
+
+  return `Vandaag: ${road}, ${spoor}, ${weather}.`;
+}
+
+function FuelCard({ item }: { item: Metric }) {
+  const dateMatch = item.note.match(/\d{4}-\d{2}-\d{2}/);
+  const date = dateMatch ? dateMatch[0] : "laatst bekend";
+
+  return (
+    <CardShell href={item.href}>
+      <StatusBadge>duur</StatusBadge>
+
+      <div className="mt-5 text-5xl font-black tracking-tight leading-tight">
+        {item.value}
+      </div>
+
+      <div className="mt-6 text-2xl text-neutral-200">benzine</div>
+
+      <div className="mt-2 space-y-1 text-sm leading-6 text-neutral-500">
+        <div>Euro95 · pompprijs</div>
+        <div>CBS · laatst bekend · {date}</div>
+      </div>
+
+      <Sparkline points={item.history ?? []} />
+    </CardShell>
+  );
+}
+
+function TrafficCard({ item }: { item: Metric }) {
+  const status = getFileStatus(item.value);
+
+  return (
+    <CardShell href={item.href}>
+      <StatusBadge>{status}</StatusBadge>
+
+      <div className="mt-5 text-5xl font-black tracking-tight leading-tight">
+        {item.value}
+      </div>
+
+      <div className="mt-6 text-2xl text-neutral-200">file</div>
+
+      <div className="mt-2 text-sm leading-6 text-neutral-500">
+        {item.note}
+      </div>
+    </CardShell>
+  );
+}
+
+function WeatherCard({ item }: { item: Metric }) {
+  const weather = parseWeather(item.value);
+  const status = getWeatherStatus(item.note);
+
+  return (
+    <CardShell href={item.href}>
+      <StatusBadge>{status}</StatusBadge>
+
+      <div className="mt-5 text-5xl font-black tracking-tight leading-tight">
+        {weather.temperature}
+      </div>
+
+      <div className="mt-6 text-2xl text-neutral-200">weer</div>
+
+      <div className="mt-2 space-y-1 text-sm leading-6 text-neutral-500">
+        <div>wind {weather.wind}</div>
+        <div>{item.note}</div>
+      </div>
+    </CardShell>
+  );
+}
+
+function SpoorCard({ item }: { item: Metric }) {
+  const { storingen, werkzaamheden } = parseSpoor(item.value);
+  const status = getSpoorStatus(storingen);
+
+  return (
+    <CardShell href={item.href}>
+      <StatusBadge>{status}</StatusBadge>
+
+      <div className="mt-5 text-5xl font-black tracking-tight leading-tight">
+        {storingen}
+      </div>
+
+      <div className="mt-6 text-2xl text-neutral-200">storingen</div>
+
+      <div className="mt-2 space-y-1 text-sm leading-6 text-neutral-500">
+        <div>actieve meldingen · NS</div>
+        <div>{werkzaamheden} werkzaamheden</div>
+      </div>
+    </CardShell>
+  );
+}
+
+export default async function Home() {
+  const data = await getMetrics();
+
+  const fuel: Metric = {
+    value: data.benzine.value,
+    label: "benzine",
+    note: data.benzine.note,
+    history: data.benzine.history,
+    href: "https://www.cbs.nl/nl-nl/cijfers/detail/80416ned",
+  };
+
+  const traffic: Metric = {
+    value: data.file.value,
+    label: "file",
+    note: data.file.note,
+    history: data.file.history,
+    href: "https://file.ndw.nu/",
+  };
+
+  const weather: Metric = {
+    value: data.weer.value,
+    label: "weer",
+    note: data.weer.note,
+    history: data.weer.history,
+    href: "https://open-meteo.com/en/docs",
+  };
+
+  const spoor: Metric = {
+    value: data.storingen.value,
+    label: "spoor",
+    note: data.storingen.note,
+    history: data.storingen.history,
+    href: "https://www.ns.nl/reisinformatie/actuele-situatie-op-het-spoor/",
+  };
+
+  const { storingen } = parseSpoor(spoor.value);
+
+  const summary = buildSummary({
+    fileValue: traffic.value,
+    weatherNote: weather.note,
+    storingen,
+  });
+
+  return (
+    <main className="relative min-h-screen overflow-hidden bg-neutral-950 text-neutral-100">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(255,255,255,0.08),transparent_28%),radial-gradient(circle_at_80%_80%,rgba(255,255,255,0.05),transparent_30%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_bottom,transparent,rgba(0,0,0,0.45))]" />
+
+      <section className="relative mx-auto flex min-h-screen w-full max-w-6xl flex-col justify-center px-6 py-16">
+        <header className="mb-14">
+          <p className="text-sm uppercase tracking-[0.45em] text-neutral-500">
+            Nederland in cijfers
           </p>
+
+          <h1 className="mt-5 text-7xl font-black tracking-tight text-neutral-50 md:text-9xl">
+            Valt mee.
+          </h1>
+
+          <p className="mt-5 max-w-2xl text-lg text-neutral-500">
+            {summary}
+          </p>
+        </header>
+
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          <FuelCard item={fuel} />
+          <TrafficCard item={traffic} />
+          <WeatherCard item={weather} />
+          <SpoorCard item={spoor} />
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+
+        <footer className="mt-12 flex flex-col gap-2 text-sm text-neutral-600 sm:flex-row sm:items-center sm:justify-between">
+          <span>{data.sources.join(" · ")}</span>
+          <span>experimenteel · klik op een kaart voor de bron</span>
+        </footer>
+      </section>
+    </main>
   );
 }
