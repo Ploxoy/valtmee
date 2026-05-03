@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import LocalForecast from "./components/local-forecast";
+import ShareButton from "./components/share-button";
 
 export const dynamic = "force-dynamic";
 
@@ -13,12 +14,14 @@ type Metric = {
   note: string;
   href: string;
   history?: SparkPoint[];
+  trend?: string;
 };
 
 type MetricPayload = {
   value: string;
   note: string;
   history: SparkPoint[];
+  trend?: string;
 };
 
 type MetricsResponse = {
@@ -83,6 +86,7 @@ function toMetric(payload: MetricPayload, href: string): Metric {
     value: payload.value,
     note: payload.note,
     history: payload.history,
+    trend: payload.trend,
     href,
   };
 }
@@ -149,6 +153,20 @@ function ExternalHint() {
   );
 }
 
+function SourceHint({ href }: { href: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label="Open weather source"
+      className="absolute right-6 top-6 text-sm text-neutral-600 transition hover:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-white/30"
+    >
+      ↗
+    </a>
+  );
+}
+
 function CardShell({
   href,
   children,
@@ -199,6 +217,11 @@ function parseWeather(value: string) {
     temperature: tempRaw?.trim() || value,
     wind: windRaw?.trim() || "—",
   };
+}
+
+function formatShareWeather(value: string, note: string) {
+  const weather = parseWeather(value);
+  return `${weather.temperature} / ${note}`;
 }
 
 function parseSpoor(value: string) {
@@ -271,6 +294,7 @@ function FuelCard({ item }: { item: Metric }) {
       <div className="mt-2 space-y-1 text-sm leading-6 text-neutral-500">
         <div>Euro95 · pompprijs</div>
         <div>CBS · laatst bekend · {date}</div>
+        {item.trend && <div>{item.trend}</div>}
       </div>
 
       <Sparkline points={item.history ?? []} />
@@ -303,7 +327,8 @@ function WeatherCard({ item }: { item: Metric }) {
   const status = getWeatherStatus(item.note);
 
   return (
-    <CardShell href={item.href}>
+    <div className="relative block min-h-72 rounded-[2rem] border border-white/10 bg-white/[0.045] p-7 shadow-2xl shadow-black/30 backdrop-blur transition duration-300 hover:border-white/20 hover:bg-white/[0.07]">
+      <SourceHint href={item.href} />
       <StatusBadge>{status}</StatusBadge>
 
       <div className="mt-5 text-5xl font-black tracking-tight leading-tight">
@@ -316,7 +341,9 @@ function WeatherCard({ item }: { item: Metric }) {
         <div>wind {weather.wind}</div>
         <div>{item.note}</div>
       </div>
-    </CardShell>
+
+      <LocalForecast />
+    </div>
   );
 }
 
@@ -379,16 +406,24 @@ export default async function Home() {
           <p className="mt-5 max-w-2xl text-lg text-neutral-500">
             {summary}
           </p>
+
+          <div className="mt-7">
+            <ShareButton
+              summary={summary}
+              fuel={fuel.value}
+              traffic={traffic.value}
+              weather={formatShareWeather(weather.value, weather.note)}
+              trains={spoor.value}
+            />
+          </div>
         </header>
 
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          <WeatherCard item={weather} />
           <FuelCard item={fuel} />
           <TrafficCard item={traffic} />
-          <WeatherCard item={weather} />
           <SpoorCard item={spoor} />
         </div>
-
-        <LocalForecast />
 
         <footer className="mt-12 flex flex-col gap-2 text-sm text-neutral-600 sm:flex-row sm:items-center sm:justify-between">
           <span>{data.sources.join(" · ")}</span>

@@ -22,6 +22,7 @@ type MetricPayload = {
   value: string;
   note: string;
   history: SparkPoint[];
+  trend?: string;
 };
 
 type NdwTrafficRow = {
@@ -38,8 +39,13 @@ type NsDisruptionsResponse = {
   disruptions?: NsDisruptionRow[];
 };
 
-function metric(value: string, note: string, history: SparkPoint[] = []): MetricPayload {
-  return { value, note, history };
+function metric(
+  value: string,
+  note: string,
+  history: SparkPoint[] = [],
+  trend?: string
+): MetricPayload {
+  return { value, note, history, trend };
 }
 
 function unavailableMetric(note: string): MetricPayload {
@@ -120,6 +126,18 @@ async function getFuelPrice() {
   rows.sort((a, b) => String(a.Perioden).localeCompare(String(b.Perioden)));
 
   const latest = rows[rows.length - 1];
+  const previous = rows[rows.length - 2];
+  const fuelTrend =
+    previous && Number.isFinite(previous.BenzineEuro95_1)
+      ? latest.BenzineEuro95_1 - previous.BenzineEuro95_1
+      : null;
+
+  const trend =
+    fuelTrend === null
+      ? undefined
+      : `${fuelTrend >= 0 ? "+" : "-"}€${Math.abs(fuelTrend)
+          .toFixed(2)
+          .replace(".", ",")} vs vorige`;
 
   const history: SparkPoint[] = rows.slice(-365).map((row) => ({
     date: formatCbsDate(String(row.Perioden)),
@@ -129,7 +147,8 @@ async function getFuelPrice() {
   return metric(
     `€${latest.BenzineEuro95_1.toFixed(2).replace(".", ",")}`,
     `Euro95 · CBS · ${formatCbsDate(String(latest.Perioden))}`,
-    history
+    history,
+    trend
   );
 }
 async function getTraffic() {
@@ -260,7 +279,6 @@ export async function GET() {
 
   const data = {
     benzine: fuel,
-    hypotheek: metric("4,03%", "gemiddeld"),
     file: traffic,
     weer: weather,
     storingen: trains,
