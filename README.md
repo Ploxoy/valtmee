@@ -156,6 +156,16 @@ Before deploying:
 2. Run `npm run lint`.
 3. Run `npm run build`.
 
+## Vercel Web Analytics
+
+The app includes Vercel Web Analytics through `@vercel/analytics`.
+
+To collect data in production:
+
+1. Enable Web Analytics for the project in the Vercel dashboard.
+2. Deploy the app to Vercel.
+3. Open the deployed site and verify that analytics requests appear under `/_vercel/insights/*`.
+
 The homepage and detail pages use dynamic rendering where needed so server-side metrics are fetched at request time instead of being incorrectly prerendered as static content.
 
 ## Current Status
