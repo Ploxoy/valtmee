@@ -38,7 +38,10 @@ type TrafficDetails = {
 type TrainMessage = {
   title: string;
   type: string;
-  route: string;
+  reason?: string;
+  meta?: string;
+  description?: string;
+  advice?: string;
 };
 
 type TrainDetails = {
@@ -69,7 +72,36 @@ type NdwTrafficRow = {
 
 type NsDisruptionRow = {
   id?: string;
+  description?: string;
+  end?: string;
+  expectedDuration?: {
+    description?: string;
+  };
   isActive?: boolean;
+  lastUpdated?: string;
+  period?: string;
+  summaryAdditionalTravelTime?: {
+    label?: string;
+    shortLabel?: string;
+  };
+  timespans?: Array<{
+    additionalTravelTime?: {
+      label?: string;
+      shortLabel?: string;
+    };
+    advices?: string[];
+    alternativeTransport?: {
+      label?: string;
+      shortLabel?: string;
+    };
+    cause?: {
+      label?: string;
+    };
+    period?: string;
+    situation?: {
+      label?: string;
+    };
+  }>;
   title?: string;
   topic?: string;
   type?: string;
@@ -82,8 +114,7 @@ type NsDisruptionsResponse = {
   disruptions?: NsDisruptionRow[];
 };
 
-const trafficFreshnessMs = 6 * 60 * 60 * 1000;
-const futureSkewMs = 5 * 60 * 1000;
+const trafficOldTimestampMs = 24 * 60 * 60 * 1000;
 
 function metric(
   value: string,
@@ -235,45 +266,14 @@ async function getTraffic() {
     return metric("0 km", "geen files · NDW");
   }
 
-  const now = Date.now();
-  const freshRows = validRows.filter((row) => {
-    if (!row.versionTime) return false;
-
-    const timestamp = new Date(row.versionTime).getTime();
-    if (!Number.isFinite(timestamp)) return false;
-    if (timestamp > now + futureSkewMs) return false;
-
-    return now - timestamp <= trafficFreshnessMs;
-  });
-  const staleCount = validRows.length - freshRows.length;
-
-  if (!freshRows.length) {
-    return metric(
-      "—",
-      "NDW verouderd",
-      [],
-      undefined,
-      {
-        traffic: {
-          count: 0,
-          totalKm: 0,
-          averageKm: 0,
-          updatedAt: "geen actuele data",
-          staleCount,
-          jams: [],
-        },
-      }
-    );
-  }
-
-  const totalMeters = freshRows.reduce(
+  const totalMeters = validRows.reduce(
     (sum, row) => sum + Number(row.distanceInMeters),
     0
   );
 
   const km = Math.round(totalMeters / 1000);
 
-  const validTimes = freshRows
+  const validTimes = validRows
     .map((row) =>
       row.versionTime ? new Date(row.versionTime).getTime() : NaN
     )
@@ -286,14 +286,24 @@ async function getTraffic() {
       ? "actueel"
       : formatAmsterdamDateTime(newestTime);
 
-  const sortedRows = [...freshRows].sort(
+  const now = Date.now();
+  const staleCount = validRows.filter((row) => {
+    if (!row.versionTime) return true;
+
+    const timestamp = new Date(row.versionTime).getTime();
+    if (!Number.isFinite(timestamp)) return true;
+
+    return now - timestamp > trafficOldTimestampMs;
+  }).length;
+
+  const sortedRows = [...validRows].sort(
     (a, b) => Number(b.distanceInMeters) - Number(a.distanceInMeters)
   );
 
   const details: TrafficDetails = {
-    count: freshRows.length,
+    count: validRows.length,
     totalKm: km,
-    averageKm: Number((km / freshRows.length).toFixed(1)),
+    averageKm: Number((km / validRows.length).toFixed(1)),
     updatedAt: time,
     staleCount,
     jams: sortedRows.slice(0, 7).map((row) => {
@@ -315,7 +325,7 @@ async function getTraffic() {
 
   return metric(
     `${km} km`,
-    `${freshRows.length} files · NDW · ${time}`,
+    `${validRows.length} files · NDW · ${time}`,
     [],
     undefined,
     { traffic: details }
@@ -339,14 +349,67 @@ function toDisruptions(payload: unknown): NsDisruptionRow[] {
 
 function toTrainMessage(item: NsDisruptionRow): TrainMessage {
   const type = String(item.type ?? "melding").toUpperCase();
-  const route =
-    item.route ??
-    item.routes?.join(" · ") ??
-    item.station ??
-    "traject onbekend";
-  const title = item.title ?? item.topic ?? item.id ?? "NS melding";
+  const timespan = item.timespans?.[0];
+  const title = stripTrailingDot(item.title ?? item.topic ?? item.id ?? "NS melding");
+  const cause = timespan?.cause?.label;
+  const duration =
+    item.expectedDuration?.description ??
+    toUntilLabel(item.end) ??
+    compactPeriod(item.period ?? timespan?.period);
+  const update = item.lastUpdated
+    ? `update ${formatAmsterdamDateTime(new Date(item.lastUpdated).getTime())}`
+    : undefined;
+  const extraTime =
+    item.summaryAdditionalTravelTime?.shortLabel ??
+    timespan?.additionalTravelTime?.shortLabel;
+  const transport = timespan?.alternativeTransport?.shortLabel;
+  const description = item.description ?? timespan?.situation?.label;
+  const reason = toTrainReason(type, description, cause);
+  const metaCause = reason === cause ? undefined : cause;
+  const meta = [metaCause, duration ?? update, extraTime, transport]
+    .filter(Boolean)
+    .join(" · ");
+  const advice = timespan?.advices?.find(Boolean);
 
-  return { title, type, route };
+  return { title, type, reason, meta, description, advice };
+}
+
+function toTrainReason(type: string, description?: string, cause?: string) {
+  if (type !== "DISRUPTION") return undefined;
+
+  const text = description?.toLowerCase() ?? "";
+
+  if (text.includes("geen treinen")) return "geen treinen";
+  if (text.includes("minder treinen")) return "minder treinen";
+
+  return cause;
+}
+
+function stripTrailingDot(value: string) {
+  return value.replace(/\.+$/g, "");
+}
+
+function compactPeriod(period?: string) {
+  if (!period) return undefined;
+
+  const match = period.match(/\bt\/m\s+(.+)$/i);
+  return match ? `t/m ${match[1]}` : period;
+}
+
+function toUntilLabel(value?: string) {
+  if (!value) return undefined;
+
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) return undefined;
+
+  return `t/m ${new Date(timestamp).toLocaleString("nl-NL", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Europe/Amsterdam",
+  })}`;
 }
 
 async function getTrainDisruptions() {

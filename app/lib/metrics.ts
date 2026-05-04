@@ -43,17 +43,26 @@ export type MetricPayload = {
       disruptions: Array<{
         title: string;
         type: string;
-        route: string;
+        reason?: string;
+        meta?: string;
+        description?: string;
+        advice?: string;
       }>;
       maintenance: Array<{
         title: string;
         type: string;
-        route: string;
+        reason?: string;
+        meta?: string;
+        description?: string;
+        advice?: string;
       }>;
       calamities: Array<{
         title: string;
         type: string;
-        route: string;
+        reason?: string;
+        meta?: string;
+        description?: string;
+        advice?: string;
       }>;
     };
   };

@@ -53,8 +53,9 @@ export default async function FilePage() {
           </h2>
           {details && details.staleCount > 0 && (
             <p className="mt-3 text-xs leading-5 text-neutral-600">
-              {details.staleCount} oude NDW-meldingen genegeerd, omdat ze ouder
-              zijn dan 6 uur.
+              {details.staleCount} NDW-meldingen hebben een tijdstempel ouder
+              dan 24 uur. Ze tellen mee omdat NDW ze in het actuele overzicht
+              levert.
             </p>
           )}
           <div className="mt-4 divide-y divide-white/10">

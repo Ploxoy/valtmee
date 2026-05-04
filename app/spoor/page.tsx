@@ -35,19 +35,12 @@ export default async function SpoorPage() {
 
         <section className="rounded-[2rem] border border-white/10 bg-white/[0.045] p-7 shadow-2xl shadow-black/30 backdrop-blur">
           <h2 className="text-sm uppercase tracking-[0.28em] text-neutral-500">
-            werkzaamheden
-          </h2>
-          <MessageList
-            empty="Geen actieve werkzaamheden."
-            items={details?.maintenance ?? []}
-          />
-
-          <h2 className="mt-8 text-sm uppercase tracking-[0.28em] text-neutral-500">
             storingen
           </h2>
           <MessageList
             empty="Geen actieve storingen."
             items={details?.disruptions ?? []}
+            tone="danger"
           />
 
           {details && details.calamities.length > 0 && (
@@ -58,6 +51,14 @@ export default async function SpoorPage() {
               <MessageList empty="" items={details.calamities} />
             </>
           )}
+
+          <h2 className="mt-8 text-sm uppercase tracking-[0.28em] text-neutral-500">
+            werkzaamheden
+          </h2>
+          <MessageList
+            empty="Geen actieve werkzaamheden."
+            items={details?.maintenance ?? []}
+          />
         </section>
       </div>
     </DetailShell>
@@ -67,9 +68,17 @@ export default async function SpoorPage() {
 function MessageList({
   empty,
   items,
+  tone = "default",
 }: {
   empty: string;
-  items: Array<{ title: string; route: string }>;
+  items: Array<{
+    advice?: string;
+    description?: string;
+    meta?: string;
+    reason?: string;
+    title: string;
+  }>;
+  tone?: "danger" | "default";
 }) {
   if (!items.length) {
     return <p className="mt-4 text-sm text-neutral-500">{empty}</p>;
@@ -78,11 +87,34 @@ function MessageList({
   return (
     <div className="mt-4 divide-y divide-white/10">
       {items.map((item) => (
-        <div key={`${item.title}-${item.route}`} className="py-3">
+        <div key={`${item.title}-${item.meta ?? item.description ?? ""}`} className="py-3">
+          {item.reason && (
+            <div
+              className={
+                tone === "danger"
+                  ? "mb-2 text-lg font-black tracking-tight text-rose-400"
+                  : "mb-2 text-sm font-semibold text-neutral-300"
+              }
+            >
+              {item.reason}
+            </div>
+          )}
           <div className="text-sm font-semibold text-neutral-200">
             {item.title}
           </div>
-          <div className="mt-1 text-sm text-neutral-500">{item.route}</div>
+          {item.meta && (
+            <div className="mt-1 text-sm text-neutral-500">{item.meta}</div>
+          )}
+          {item.description && (
+            <div className="mt-2 text-sm leading-5 text-neutral-500">
+              {item.description}
+            </div>
+          )}
+          {item.advice && (
+            <div className="mt-2 text-sm leading-5 text-neutral-600">
+              {item.advice}
+            </div>
+          )}
         </div>
       ))}
     </div>
