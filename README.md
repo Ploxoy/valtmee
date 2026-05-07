@@ -1,6 +1,6 @@
 # Valt mee
 
-Release: `v0.1.0`
+Release: `v0.1.1`
 
 Valt mee is a calm daily dashboard for the Netherlands.
 
@@ -186,11 +186,12 @@ The homepage and detail pages use dynamic rendering where needed so server-side 
 
 ## Current Status
 
-This is the `v0.1.0` baseline release:
+This is the `v0.1.1` reliability release:
 
 - homepage stays minimal,
 - detail pages carry deeper information,
 - `dagbon` remains a secondary share feature,
-- data source transparency is part of the UI.
+- data source transparency is part of the UI;
+- external metric failures degrade gracefully instead of blocking the dashboard.
 
 See `CHANGELOG.md` for release notes.

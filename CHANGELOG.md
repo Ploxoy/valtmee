@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.1.1 - 2026-05-07
+
+Reliability and observability patch release.
+
+### Reliability
+
+- Added a shared reliability pattern for external metric sources: short upstream timeouts, last-good in-memory fallback, and negative-cache cooldowns after failures.
+- Hardened CBS fuel loading so a slow or unavailable CBS endpoint no longer blocks the dashboard or renders an empty fuel card.
+- Added a static last-known CBS fuel snapshot for cold starts when CBS is unavailable.
+- Applied timeout and fallback handling to Open-Meteo, NDW, and NS metric fetches.
+- Updated summary logic so unavailable weather or NS data is shown as `weer onbekend` or `spoor onbekend` instead of being interpreted as a normal calm state.
+
+### Observability
+
+- Added Vercel Web Analytics through `@vercel/analytics`.
+- Documented the required Vercel dashboard setup for production analytics collection.
+
+### Documentation
+
+- Documented the external-source reliability rule for current and future metric integrations.
+- Clarified CBS fallback behavior and the current `v0.1.1` release status.
+
 ## v0.1.0 - 2026-05-04
 
 First baseline release of Valt mee.
