@@ -147,12 +147,14 @@ export function getFileStatus(fileValue: string) {
 export function getWeatherStatus(weatherNote: string) {
   const note = weatherNote.toLowerCase();
 
+  if (note.includes("niet beschikbaar")) return "onbekend";
   if (note.includes("regen")) return "nat";
   if (note.includes("droog")) return "droog";
   return "weer";
 }
 
-export function getSpoorStatus(storingen: number) {
+export function getSpoorStatus(storingen: number, isKnown = true) {
+  if (!isKnown) return "onbekend";
   if (storingen === 0) return "rustig";
   if (storingen <= 3) return "valt mee";
   if (storingen <= 10) return "onrustig";
@@ -178,25 +180,30 @@ export function parseSpoor(value: string) {
 
   const storingen = Number.parseInt(storingenRaw?.trim() || "0", 10);
   const werkzaamheden = Number.parseInt(werkzaamhedenRaw?.trim() || "0", 10);
+  const isKnown =
+    Number.isFinite(storingen) && Number.isFinite(werkzaamheden);
 
   return {
-    storingen: Number.isFinite(storingen) ? storingen : 0,
-    werkzaamheden: Number.isFinite(werkzaamheden) ? werkzaamheden : 0,
+    isKnown,
+    storingen: isKnown ? storingen : 0,
+    werkzaamheden: isKnown ? werkzaamheden : 0,
   };
 }
 
 export function buildSummary({
   fileValue,
   weatherNote,
+  spoorKnown = true,
   storingen,
 }: {
   fileValue: string;
   weatherNote: string;
+  spoorKnown?: boolean;
   storingen: number;
 }) {
   const fileStatus = getFileStatus(fileValue);
   const weatherStatus = getWeatherStatus(weatherNote);
-  const spoorStatus = getSpoorStatus(storingen);
+  const spoorStatus = getSpoorStatus(storingen, spoorKnown);
 
   const road =
     fileStatus === "onbekend"
@@ -210,14 +217,18 @@ export function buildSummary({
           : "veel files";
 
   const weather =
-    weatherStatus === "nat"
+    weatherStatus === "onbekend"
+      ? "weer onbekend"
+      : weatherStatus === "nat"
       ? "nat weer"
       : weatherStatus === "droog"
         ? "droog weer"
         : "gewoon weer";
 
   const spoor =
-    spoorStatus === "rustig"
+    spoorStatus === "onbekend"
+      ? "spoor onbekend"
+      : spoorStatus === "rustig"
       ? "weinig spoorstoringen"
       : spoorStatus === "valt mee"
         ? "enkele spoorstoringen"

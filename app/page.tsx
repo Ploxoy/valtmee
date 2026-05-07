@@ -116,8 +116,8 @@ function WeatherCard({ item }: { item: Metric }) {
 }
 
 function SpoorCard({ item }: { item: Metric }) {
-  const { storingen, werkzaamheden } = parseSpoor(item.value);
-  const status = getSpoorStatus(storingen);
+  const { isKnown, storingen, werkzaamheden } = parseSpoor(item.value);
+  const status = getSpoorStatus(storingen, isKnown);
 
   return (
     <CardShell href={item.href}>
@@ -145,10 +145,11 @@ export default async function Home() {
   const weather = toMetric(data.weer, "/weer");
   const spoor = toMetric(data.storingen, "/spoor");
 
-  const { storingen } = parseSpoor(spoor.value);
+  const { isKnown: spoorKnown, storingen } = parseSpoor(spoor.value);
 
   const summary = buildSummary({
     fileValue: traffic.value,
+    spoorKnown,
     weatherNote: weather.note,
     storingen,
   });

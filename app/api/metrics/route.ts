@@ -62,6 +62,15 @@ type MetricPayload = {
   };
 };
 
+type SourceCache = {
+  fallback: MetricPayload;
+  failureCooldownMs: number;
+  lastFailureAt: number;
+  lastGood: MetricPayload | null;
+};
+
+type SourceName = "fuel" | "traffic" | "trains" | "weather";
+
 type NdwTrafficRow = {
   distanceInMeters: number;
   provinces?: string[];
@@ -115,6 +124,43 @@ type NsDisruptionsResponse = {
 };
 
 const trafficOldTimestampMs = 24 * 60 * 60 * 1000;
+const cbsFuelTotalTimeoutMs = 1_800;
+const cbsFuelRequestTimeoutMs = 1_500;
+const sourceFailureCooldownMs = 5 * 60 * 1000;
+const defaultSourceTimeoutMs = 1_800;
+const trafficSourceTimeoutMs = 1_500;
+const nsSourceTimeoutMs = 2_000;
+const cbsFuelFallbackRows: CbsFuelRow[] = [
+  { Perioden: "20260420", BenzineEuro95_1: 2.32 },
+  { Perioden: "20260427", BenzineEuro95_1: 2.32 },
+];
+
+const sourceCaches: Record<SourceName, SourceCache> = {
+  fuel: {
+    fallback: buildFuelMetric(cbsFuelFallbackRows, "CBS cache"),
+    failureCooldownMs: sourceFailureCooldownMs,
+    lastFailureAt: 0,
+    lastGood: null,
+  },
+  traffic: {
+    fallback: metric("—", "NDW niet beschikbaar"),
+    failureCooldownMs: sourceFailureCooldownMs,
+    lastFailureAt: 0,
+    lastGood: null,
+  },
+  trains: {
+    fallback: unavailableMetric("NS niet beschikbaar"),
+    failureCooldownMs: sourceFailureCooldownMs,
+    lastFailureAt: 0,
+    lastGood: null,
+  },
+  weather: {
+    fallback: metric("— / —", "Open-Meteo niet beschikbaar"),
+    failureCooldownMs: sourceFailureCooldownMs,
+    lastFailureAt: 0,
+    lastGood: null,
+  },
+};
 
 function metric(
   value: string,
@@ -153,6 +199,49 @@ function formatAmsterdamDateTime(timestamp: number): string {
   });
 }
 
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit & { next?: { revalidate: number } },
+  timeoutMs: number
+) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function resolveCachedMetric(
+  name: SourceName,
+  fetchMetric: () => Promise<MetricPayload>
+) {
+  const cache = sourceCaches[name];
+
+  if (
+    cache.lastFailureAt &&
+    Date.now() - cache.lastFailureAt < cache.failureCooldownMs
+  ) {
+    return cache.lastGood ?? cache.fallback;
+  }
+
+  try {
+    const result = await fetchMetric();
+    cache.lastGood = result;
+    cache.lastFailureAt = 0;
+    return result;
+  } catch (error) {
+    console.error(`[metrics] ${name} live fetch failed`, error);
+    cache.lastFailureAt = Date.now();
+    return cache.lastGood ?? cache.fallback;
+  }
+}
+
 async function getWeather() {
   const url =
     "https://api.open-meteo.com/v1/forecast" +
@@ -161,9 +250,11 @@ async function getWeather() {
     "&current=temperature_2m,wind_speed_10m,precipitation" +
     "&timezone=Europe%2FAmsterdam";
 
-  const res = await fetch(url, {
-    next: { revalidate: 900 },
-  });
+  const res = await fetchWithTimeout(
+    url,
+    { next: { revalidate: 900 } },
+    defaultSourceTimeoutMs
+  );
 
   if (!res.ok) {
     throw new Error("Open-Meteo request failed");
@@ -178,16 +269,63 @@ async function getWeather() {
   return metric(`${temp}° / ${wind} Bft`, rain > 0 ? `${rain} mm regen` : "droog");
 }
 
-async function getFuelPrice() {
+function buildFuelMetric(rows: CbsFuelRow[], sourceLabel = "CBS") {
+  if (!rows.length) {
+    throw new Error("CBS fuel data empty");
+  }
+
+  const sortedRows = [...rows].sort((a, b) =>
+    String(a.Perioden).localeCompare(String(b.Perioden))
+  );
+
+  const latest = sortedRows[sortedRows.length - 1];
+  const previous = sortedRows[sortedRows.length - 2];
+  const fuelTrend =
+    previous && Number.isFinite(previous.BenzineEuro95_1)
+      ? latest.BenzineEuro95_1 - previous.BenzineEuro95_1
+      : null;
+
+  const trend =
+    fuelTrend === null
+      ? undefined
+      : `${fuelTrend >= 0 ? "+" : "-"}€${Math.abs(fuelTrend)
+          .toFixed(2)
+          .replace(".", ",")} vs vorige`;
+
+  const history: SparkPoint[] = sortedRows.slice(-365).map((row) => ({
+    date: formatCbsDate(String(row.Perioden)),
+    value: row.BenzineEuro95_1,
+  }));
+
+  return metric(
+    `€${latest.BenzineEuro95_1.toFixed(2).replace(".", ",")}`,
+    `Euro95 · ${sourceLabel} · ${formatCbsDate(String(latest.Perioden))}`,
+    history,
+    trend
+  );
+}
+
+async function fetchCbsFuelRows() {
   let url: string | null =
     "https://opendata.cbs.nl/ODataApi/OData/80416ned/TypedDataSet?$select=Perioden,BenzineEuro95_1";
 
   const rows: CbsFuelRow[] = [];
+  const deadline = Date.now() + cbsFuelTotalTimeoutMs;
 
   while (url) {
-    const res = await fetch(url, {
-      next: { revalidate: 21600 },
-    });
+    const remainingMs = deadline - Date.now();
+
+    if (remainingMs <= 0) {
+      throw new Error("CBS fuel request timed out");
+    }
+
+    const res = await fetchWithTimeout(
+      url,
+      {
+        next: { revalidate: 21600 },
+      },
+      Math.min(cbsFuelRequestTimeoutMs, remainingMs)
+    );
 
     if (!res.ok) {
       throw new Error("CBS fuel request failed");
@@ -208,45 +346,22 @@ async function getFuelPrice() {
     url = json["odata.nextLink"] ?? json["__next"] ?? null;
   }
 
-  if (!rows.length) {
-    throw new Error("CBS fuel data empty");
-  }
-
-  rows.sort((a, b) => String(a.Perioden).localeCompare(String(b.Perioden)));
-
-  const latest = rows[rows.length - 1];
-  const previous = rows[rows.length - 2];
-  const fuelTrend =
-    previous && Number.isFinite(previous.BenzineEuro95_1)
-      ? latest.BenzineEuro95_1 - previous.BenzineEuro95_1
-      : null;
-
-  const trend =
-    fuelTrend === null
-      ? undefined
-      : `${fuelTrend >= 0 ? "+" : "-"}€${Math.abs(fuelTrend)
-          .toFixed(2)
-          .replace(".", ",")} vs vorige`;
-
-  const history: SparkPoint[] = rows.slice(-365).map((row) => ({
-    date: formatCbsDate(String(row.Perioden)),
-    value: row.BenzineEuro95_1,
-  }));
-
-  return metric(
-    `€${latest.BenzineEuro95_1.toFixed(2).replace(".", ",")}`,
-    `Euro95 · CBS · ${formatCbsDate(String(latest.Perioden))}`,
-    history,
-    trend
-  );
+  return rows;
 }
+
+async function getFuelPrice() {
+  return buildFuelMetric(await fetchCbsFuelRows());
+}
+
 async function getTraffic() {
   const url =
     "https://datafusion.ndw.nu/api/rest/traffic-jam/v1/actual/traffic-jam-latest-summary";
 
-  const res = await fetch(url, {
-    next: { revalidate: 60 },
-  });
+  const res = await fetchWithTimeout(
+    url,
+    { next: { revalidate: 60 } },
+    trafficSourceTimeoutMs
+  );
 
   if (!res.ok) {
     throw new Error(`NDW traffic request failed: ${res.status}`);
@@ -422,12 +537,16 @@ async function getTrainDisruptions() {
   const url =
     "https://gateway.apiportal.ns.nl/reisinformatie-api/api/v3/disruptions";
 
-  const res = await fetch(url, {
-    headers: {
-      "Ocp-Apim-Subscription-Key": apiKey,
+  const res = await fetchWithTimeout(
+    url,
+    {
+      headers: {
+        "Ocp-Apim-Subscription-Key": apiKey,
+      },
+      next: { revalidate: 300 },
     },
-    next: { revalidate: 300 },
-  });
+    nsSourceTimeoutMs
+  );
 
   if (!res.ok) {
     throw new Error(`NS disruptions request failed: ${res.status}`);
@@ -467,25 +586,12 @@ async function getTrainDisruptions() {
   );
 }
 
-async function resolveMetric(
-  name: string,
-  fetchMetric: () => Promise<MetricPayload>,
-  fallback: MetricPayload
-): Promise<MetricPayload> {
-  try {
-    return await fetchMetric();
-  } catch (error) {
-    console.error(`[metrics] ${name} failed`, error);
-    return fallback;
-  }
-}
-
 export async function GET() {
   const [weather, fuel, traffic, trains] = await Promise.all([
-    resolveMetric("weather", getWeather, unavailableMetric("weer niet beschikbaar")),
-    resolveMetric("fuel", getFuelPrice, unavailableMetric("benzine niet beschikbaar")),
-    resolveMetric("traffic", getTraffic, unavailableMetric("files niet beschikbaar")),
-    resolveMetric("trains", getTrainDisruptions, unavailableMetric("NS niet beschikbaar")),
+    resolveCachedMetric("weather", getWeather),
+    resolveCachedMetric("fuel", getFuelPrice),
+    resolveCachedMetric("traffic", getTraffic),
+    resolveCachedMetric("trains", getTrainDisruptions),
   ]);
 
   const data = {

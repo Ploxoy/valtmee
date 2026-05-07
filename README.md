@@ -44,6 +44,14 @@ The footer exposes `dagbon`, a compact share-mode built around the same daily me
 
 Data is aggregated through `GET /api/metrics` into a UI-friendly payload.
 
+All external metric sources should follow the same reliability rule:
+
+- use a short upstream timeout;
+- keep the last successful in-memory metric for the current server instance;
+- use a short negative-cache cooldown after upstream failures;
+- provide a safe static or unavailable fallback so one broken source does not
+  block the full dashboard.
+
 ## UX Rules
 
 - Keep the homepage calm and readable.
@@ -59,6 +67,14 @@ Data is aggregated through `GET /api/metrics` into a UI-friendly payload.
 Shows the latest CBS Euro95 value, the latest known date, the previous-period trend, and a historical chart.
 
 CBS data is labeled as `laatst bekend` because it is not a live pump price.
+
+CBS requests have a short timeout and a fallback path. If the live CBS endpoint
+is slow or unavailable, the app returns the last successful in-memory fuel
+metric for the current server instance. After a CBS failure, the app uses a
+short negative-cache cooldown so every request does not wait on the broken
+upstream. On a cold start without a successful CBS response, it falls back to a
+static last-known CBS snapshot so the dashboard does not block or render an
+empty fuel card.
 
 ### `/file`
 

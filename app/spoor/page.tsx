@@ -11,8 +11,8 @@ export const dynamic = "force-dynamic";
 export default async function SpoorPage() {
   const data = await getMetrics();
   const trains = data.storingen;
-  const { storingen, werkzaamheden } = parseSpoor(trains.value);
-  const status = getSpoorStatus(storingen);
+  const { isKnown, storingen, werkzaamheden } = parseSpoor(trains.value);
+  const status = getSpoorStatus(storingen, isKnown);
   const details = trains.details?.trains;
 
   return (
