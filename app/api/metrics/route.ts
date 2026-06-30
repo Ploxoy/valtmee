@@ -1,3 +1,4 @@
+import { get, put } from "@vercel/blob";
 import cbsFuelSnapshotRows from "../../data/cbs-fuel-snapshot.json";
 
 export const runtime = "nodejs";
@@ -70,6 +71,7 @@ type SourceCache = {
   lastFailureAt: number;
   lastGoodAt: number;
   lastGood: MetricPayload | null;
+  snapshotPath: string;
   successTtlMs: number;
 };
 
@@ -147,6 +149,7 @@ const sourceCaches: Record<SourceName, SourceCache> = {
     lastFailureAt: 0,
     lastGoodAt: 0,
     lastGood: null,
+    snapshotPath: "metrics/fuel/latest.json",
     successTtlMs: fuelSuccessTtlMs,
   },
   traffic: {
@@ -155,6 +158,7 @@ const sourceCaches: Record<SourceName, SourceCache> = {
     lastFailureAt: 0,
     lastGoodAt: 0,
     lastGood: null,
+    snapshotPath: "metrics/traffic/latest.json",
     successTtlMs: trafficSuccessTtlMs,
   },
   trains: {
@@ -163,6 +167,7 @@ const sourceCaches: Record<SourceName, SourceCache> = {
     lastFailureAt: 0,
     lastGoodAt: 0,
     lastGood: null,
+    snapshotPath: "metrics/trains/latest.json",
     successTtlMs: trainsSuccessTtlMs,
   },
   weather: {
@@ -171,6 +176,7 @@ const sourceCaches: Record<SourceName, SourceCache> = {
     lastFailureAt: 0,
     lastGoodAt: 0,
     lastGood: null,
+    snapshotPath: "metrics/weather/latest.json",
     successTtlMs: weatherSuccessTtlMs,
   },
 };
@@ -230,6 +236,59 @@ async function fetchWithTimeout(
   }
 }
 
+function isBlobConfigured() {
+  return Boolean(
+    process.env.BLOB_READ_WRITE_TOKEN ||
+      (process.env.BLOB_STORE_ID && process.env.VERCEL_OIDC_TOKEN)
+  );
+}
+
+function isMetricPayload(value: unknown): value is MetricPayload {
+  if (!value || typeof value !== "object") return false;
+
+  const payload = value as Partial<MetricPayload>;
+  return (
+    typeof payload.value === "string" &&
+    typeof payload.note === "string" &&
+    Array.isArray(payload.history)
+  );
+}
+
+async function readBlobSnapshot(cache: SourceCache) {
+  if (!isBlobConfigured()) return null;
+
+  try {
+    const result = await get(cache.snapshotPath, { access: "private" });
+
+    if (!result || result.statusCode !== 200) {
+      return null;
+    }
+
+    const payload = (await new Response(result.stream).json()) as unknown;
+
+    return isMetricPayload(payload) ? payload : null;
+  } catch (error) {
+    console.error(`[metrics] Blob snapshot read failed: ${cache.snapshotPath}`, error);
+    return null;
+  }
+}
+
+async function writeBlobSnapshot(cache: SourceCache, payload: MetricPayload) {
+  if (!isBlobConfigured()) return;
+
+  try {
+    await put(cache.snapshotPath, JSON.stringify(payload), {
+      access: "private",
+      addRandomSuffix: false,
+      allowOverwrite: true,
+      cacheControlMaxAge: 60,
+      contentType: "application/json",
+    });
+  } catch (error) {
+    console.error(`[metrics] Blob snapshot write failed: ${cache.snapshotPath}`, error);
+  }
+}
+
 async function resolveCachedMetric(
   name: SourceName,
   fetchMetric: () => Promise<MetricPayload>
@@ -245,7 +304,14 @@ async function resolveCachedMetric(
     cache.lastFailureAt &&
     now - cache.lastFailureAt < cache.failureCooldownMs
   ) {
-    return cache.lastGood ?? cache.fallback;
+    const snapshot = cache.lastGood ?? (await readBlobSnapshot(cache));
+
+    if (snapshot) {
+      cache.lastGood = snapshot;
+      return snapshot;
+    }
+
+    return cache.fallback;
   }
 
   try {
@@ -253,11 +319,19 @@ async function resolveCachedMetric(
     cache.lastGood = result;
     cache.lastGoodAt = Date.now();
     cache.lastFailureAt = 0;
+    await writeBlobSnapshot(cache, result);
     return result;
   } catch (error) {
     console.error(`[metrics] ${name} live fetch failed`, error);
     cache.lastFailureAt = Date.now();
-    return cache.lastGood ?? cache.fallback;
+    const snapshot = cache.lastGood ?? (await readBlobSnapshot(cache));
+
+    if (snapshot) {
+      cache.lastGood = snapshot;
+      return snapshot;
+    }
+
+    return cache.fallback;
   }
 }
 

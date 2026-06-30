@@ -50,6 +50,8 @@ All external metric sources should follow the same reliability rule:
 - use an explicit in-memory success TTL instead of framework-level
   stale-while-revalidate for live metrics;
 - keep the last successful in-memory metric for the current server instance;
+- persist successful metric snapshots to Vercel Blob when Blob is configured;
+- read the latest Blob snapshot on cold starts or live-source failures;
 - use a short negative-cache cooldown after upstream failures;
 - provide a safe static or unavailable fallback so one broken source does not
   block the full dashboard.
@@ -183,6 +185,33 @@ To collect data in production:
 1. Enable Web Analytics for the project in the Vercel dashboard.
 2. Deploy the app to Vercel.
 3. Open the deployed site and verify that analytics requests appear under `/_vercel/insights/*`.
+
+## Vercel Blob Snapshots
+
+The app can persist metric snapshots through `@vercel/blob`.
+
+Snapshot fallback order:
+
+1. live upstream data;
+2. in-memory last-good data for the current server instance;
+3. Vercel Blob snapshot;
+4. static fallback from the repository.
+
+To enable durable snapshots in production:
+
+1. Create a Vercel Blob store.
+2. Connect it to the Vercel project so Blob environment variables are available.
+3. Deploy the app.
+
+The current snapshot paths are:
+
+- `metrics/fuel/latest.json`
+- `metrics/weather/latest.json`
+- `metrics/traffic/latest.json`
+- `metrics/trains/latest.json`
+
+If Blob is not configured, the app continues to work with in-memory and static
+fallbacks.
 
 The homepage and detail pages use dynamic rendering where needed so server-side metrics are fetched at request time instead of being incorrectly prerendered as static content.
 

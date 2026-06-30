@@ -8,8 +8,9 @@ Reliability and observability patch release.
 
 - Added a shared reliability pattern for external metric sources: short upstream timeouts, last-good in-memory fallback, and negative-cache cooldowns after failures.
 - Replaced framework-level stale-while-revalidate upstream caching with explicit per-source in-memory TTLs, so live metrics do not require a second refresh to show updated data.
+- Added Vercel Blob metric snapshots so successful live responses can survive cold starts, redeploys, and long upstream outages.
 - Hardened CBS fuel loading so a slow or unavailable CBS endpoint no longer blocks the dashboard or renders an empty fuel card.
-- Added a static last-known CBS fuel snapshot for cold starts when CBS is unavailable.
+- Added a static last-known CBS fuel history snapshot for cold starts when CBS and Blob are unavailable.
 - Applied timeout and fallback handling to Open-Meteo, NDW, and NS metric fetches.
 - Updated summary logic so unavailable weather or NS data is shown as `weer onbekend` or `spoor onbekend` instead of being interpreted as a normal calm state.
 
