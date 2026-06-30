@@ -1,11 +1,10 @@
 import { get, put } from "@vercel/blob";
 import { sourceTextClassName, type SourceStatus } from "./metrics";
 
-export type WorldCupMatchSlot = "last" | "live" | "next";
+export type WorldCupMatchSlot = "live" | "next" | "done";
 
 export type WorldCupMatch = {
   date: string;
-  isNetherlandsWinner: boolean;
   line: string;
   note: string;
   slot: WorldCupMatchSlot;
@@ -13,9 +12,8 @@ export type WorldCupMatch = {
 };
 
 export type WorldCupData = {
-  last: WorldCupMatch | null;
-  live: WorldCupMatch | null;
-  next: WorldCupMatch | null;
+  headline: string;
+  matches: WorldCupMatch[];
   sourceName: string;
   sourceStatus: SourceStatus;
   sourceUrl: string;
@@ -30,10 +28,6 @@ type EspnEvent = {
   competitions?: Array<{
     altGameNote?: string;
     competitors?: EspnCompetitor[];
-    notes?: Array<{
-      headline?: string;
-      text?: string;
-    }>;
     status?: {
       type?: {
         completed?: boolean;
@@ -46,7 +40,6 @@ type EspnEvent = {
 type EspnCompetitor = {
   homeAway?: string;
   score?: string;
-  winner?: boolean;
   team?: {
     abbreviation?: string;
     displayName?: string;
@@ -54,10 +47,8 @@ type EspnCompetitor = {
   };
 };
 
-const espnScoreboardUrl =
-  "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=20260611-20260719&limit=200";
 const espnSourceUrl = "https://www.espn.com/soccer/scoreboard/_/league/fifa.world";
-const snapshotPath = "world-cup/oranje/latest.json";
+const snapshotPath = "world-cup/today/latest.json";
 const requestTimeoutMs = 1_800;
 const successTtlMs = 2 * 60 * 1000;
 const failureCooldownMs = 5 * 60 * 1000;
@@ -79,10 +70,9 @@ function isWorldCupMatch(value: unknown): value is WorldCupMatch {
   const payload = value as Partial<WorldCupMatch>;
   return (
     typeof payload.date === "string" &&
-    typeof payload.isNetherlandsWinner === "boolean" &&
     typeof payload.line === "string" &&
     typeof payload.note === "string" &&
-    (payload.slot === "last" || payload.slot === "live" || payload.slot === "next")
+    (payload.slot === "live" || payload.slot === "next" || payload.slot === "done")
   );
 }
 
@@ -91,9 +81,9 @@ function isWorldCupData(value: unknown): value is WorldCupData {
 
   const payload = value as Partial<WorldCupData>;
   return (
-    (payload.last === null || isWorldCupMatch(payload.last)) &&
-    (payload.live === null || isWorldCupMatch(payload.live)) &&
-    (payload.next === null || isWorldCupMatch(payload.next)) &&
+    typeof payload.headline === "string" &&
+    Array.isArray(payload.matches) &&
+    payload.matches.every(isWorldCupMatch) &&
     typeof payload.sourceName === "string" &&
     typeof payload.sourceUrl === "string"
   );
@@ -141,9 +131,8 @@ async function writeSnapshot(data: WorldCupData) {
 
   try {
     const snapshot: Omit<WorldCupData, "sourceStatus"> = {
-      last: data.last,
-      live: data.live,
-      next: data.next,
+      headline: data.headline,
+      matches: data.matches,
       sourceName: data.sourceName,
       sourceUrl: data.sourceUrl,
     };
@@ -169,13 +158,6 @@ function teamName(competitor?: EspnCompetitor) {
   );
 }
 
-function isNetherlands(competitor: EspnCompetitor) {
-  return (
-    competitor.team?.abbreviation === "NED" ||
-    competitor.team?.displayName === "Netherlands"
-  );
-}
-
 function formatAmsterdamDateTime(rawDate: string) {
   return new Intl.DateTimeFormat("nl-NL", {
     day: "numeric",
@@ -186,46 +168,47 @@ function formatAmsterdamDateTime(rawDate: string) {
   }).format(new Date(rawDate));
 }
 
-function formatAdvanceNote(note?: string) {
-  const match = note?.match(/^(.+) advance ([\\d-]+) on penalties$/i);
+function formatAmsterdamDayKey(date = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Europe/Amsterdam",
+    year: "numeric",
+  })
+    .format(date)
+    .replaceAll("-", "");
+}
 
-  if (!match) return undefined;
-
-  return `${match[1]} door na penalty's (${match[2]})`;
+function todayScoreboardUrl() {
+  return `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=${formatAmsterdamDayKey()}&limit=50`;
 }
 
 function toWorldCupMatch(event: EspnEvent): WorldCupMatch | null {
   const competition = event.competitions?.[0];
   const competitors = competition?.competitors ?? [];
-  const netherlands = competitors.find(isNetherlands);
 
-  if (!event.date || !competition || !netherlands) return null;
+  if (!event.date || !competition || competitors.length < 2) return null;
 
   const home = competitors.find((item) => item.homeAway === "home");
   const away = competitors.find((item) => item.homeAway === "away");
   const status = competition.status?.type;
   const state = status?.state ?? "pre";
   const completed = status?.completed === true;
-  const isNetherlandsWinner = netherlands.winner === true;
   const slot: WorldCupMatchSlot =
-    state === "in" ? "live" : completed ? "last" : "next";
+    state === "in" ? "live" : completed ? "done" : "next";
   const score =
-    slot === "live" || slot === "last"
+    slot === "live" || slot === "done"
       ? `${home?.score ?? "0"}-${away?.score ?? "0"}`
       : formatAmsterdamDateTime(event.date);
-  const advanceNote = formatAdvanceNote(
-    competition.notes?.[0]?.headline ?? competition.notes?.[0]?.text
-  );
   const note =
     slot === "live"
       ? "nu bezig"
-      : slot === "last"
-        ? advanceNote ?? "afgelopen"
+      : slot === "done"
+        ? "afgelopen"
         : `aftrap ${formatAmsterdamDateTime(event.date)}`;
 
   return {
     date: event.date,
-    isNetherlandsWinner,
     line: `${teamName(home)} - ${teamName(away)} · ${score}`,
     note,
     slot,
@@ -233,8 +216,7 @@ function toWorldCupMatch(event: EspnEvent): WorldCupMatch | null {
   };
 }
 
-function pickOranjeData(events: EspnEvent[]): WorldCupData | null {
-  const now = Date.now();
+function pickWorldCupData(events: EspnEvent[]): WorldCupData | null {
   const matches = events
     .map(toWorldCupMatch)
     .filter((match): match is WorldCupMatch => Boolean(match))
@@ -242,16 +224,19 @@ function pickOranjeData(events: EspnEvent[]): WorldCupData | null {
 
   if (!matches.length) return null;
 
-  const live = matches.find((match) => match.slot === "live") ?? null;
-  const past = matches.filter((match) => match.slot === "last");
-  const future = matches.filter(
-    (match) => match.slot === "next" && new Date(match.date).getTime() >= now
-  );
+  const live = matches.filter((match) => match.slot === "live");
+  const next = matches.filter((match) => match.slot === "next");
+  const done = matches.filter((match) => match.slot === "done");
+  const selected = live.length ? live : next.length ? next.slice(0, 3) : done.slice(-3);
+  const headline = live.length
+    ? `${live.length} live wedstrijd${live.length === 1 ? "" : "en"}`
+    : next.length
+      ? "volgende WK-wedstrijden"
+      : "laatste WK-uitslagen";
 
   return {
-    last: past[past.length - 1] ?? null,
-    live,
-    next: future.find((match) => match.slot !== "live") ?? null,
+    headline,
+    matches: selected,
     sourceName: "ESPN",
     sourceStatus: "live",
     sourceUrl: espnSourceUrl,
@@ -259,17 +244,17 @@ function pickOranjeData(events: EspnEvent[]): WorldCupData | null {
 }
 
 async function fetchWorldCupData() {
-  const res = await fetchWithTimeout(espnScoreboardUrl, requestTimeoutMs);
+  const res = await fetchWithTimeout(todayScoreboardUrl(), requestTimeoutMs);
 
   if (!res.ok) {
     throw new Error(`ESPN World Cup request failed: ${res.status}`);
   }
 
   const data = (await res.json()) as EspnScoreboard;
-  const worldCup = pickOranjeData(data.events ?? []);
+  const worldCup = pickWorldCupData(data.events ?? []);
 
   if (!worldCup) {
-    throw new Error("No Oranje match found in ESPN World Cup scoreboard");
+    throw new Error("No World Cup matches found in ESPN scoreboard");
   }
 
   return worldCup;
@@ -303,15 +288,12 @@ export async function getWorldCupData(): Promise<WorldCupData | null> {
 }
 
 export function formatWorldCupShareLine(data: WorldCupData | null) {
-  if (!data) return undefined;
+  if (!data || !data.matches.length) return undefined;
 
-  const parts = [
-    data.last ? `laatste ${data.last.line}` : null,
-    data.live ? `live ${data.live.line}` : null,
-    data.next ? `volgende ${data.next.line}` : null,
-  ].filter(Boolean);
+  const [first, ...rest] = data.matches;
+  const suffix = rest.length ? ` (+${rest.length})` : "";
 
-  return parts.length ? `WK Oranje: ${parts.join(" · ")}` : undefined;
+  return `WK ${first.line}${suffix}`;
 }
 
 export function worldCupSourceClassName(sourceStatus?: SourceStatus) {

@@ -12,8 +12,8 @@ type ShareButtonProps = {
 };
 
 function receiptLine(label: string, value: string) {
-  const width = 30;
-  const prefix = `- ${label} `;
+  const width = 24;
+  const prefix = `${label} `;
   const dots = ".".repeat(Math.max(3, width - prefix.length - value.length));
 
   return `${prefix}${dots} ${value}`;
@@ -27,10 +27,10 @@ function buildReceipt({
   traffic,
   trains,
 }: ShareButtonProps) {
-  return [
+  const lines = [
     "************************",
     "        valtmee.nl",
-    "           BON",
+    "         DAGBON",
     "************************",
     ...(football ? [football] : []),
     receiptLine("BENZINE", fuel),
@@ -38,14 +38,16 @@ function buildReceipt({
     receiptLine("SPOOR", trains),
     receiptLine("WEER", weather),
     "------------------------",
-    " TOTAAL: HET VALT WEL MEE",
+    "TOTAAL: HET VALT WEL MEE",
     "************************",
     "",
     summary,
     "",
     "BEDANKT!",
     "Morgen wordt het erger",
-  ].join("\n");
+  ];
+
+  return `\`\`\`\n${lines.join("\n")}\n\`\`\``;
 }
 
 export default function ShareButton(props: ShareButtonProps) {

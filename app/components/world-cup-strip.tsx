@@ -5,30 +5,15 @@ import {
   type WorldCupMatch,
 } from "../lib/world-cup";
 
-function MatchLine({
-  label,
-  match,
-  empty,
-}: {
-  label: string;
-  match: WorldCupMatch | null;
-  empty: string;
-}) {
+function MatchLine({ match }: { match: WorldCupMatch }) {
   return (
-    <div className="grid gap-1 border-t border-black/15 py-3 first:border-t-0 sm:grid-cols-[7rem_1fr] sm:gap-4">
-      <div className="text-xs font-black uppercase tracking-[0.22em] text-black/55">
-        {label}
+    <div className="border-t border-white/10 py-3 first:border-t-0">
+      <div className="text-xl font-black leading-tight tracking-tight text-neutral-100 md:text-2xl">
+        {match.line}
       </div>
-      <div>
-        <div className="text-xl font-black leading-tight tracking-tight text-black md:text-2xl">
-          {match?.line ?? empty}
-        </div>
-        {match && (
-          <div className="mt-1 text-sm font-semibold text-black/60">
-            {match.note}
-            {match.stage ? ` · ${match.stage}` : ""}
-          </div>
-        )}
+      <div className="mt-1 text-sm font-medium text-neutral-500">
+        {match.note}
+        {match.stage ? ` · ${match.stage}` : ""}
       </div>
     </div>
   );
@@ -41,28 +26,23 @@ export default function WorldCupStrip({
 }) {
   if (!worldCup) return null;
 
-  const nextEmpty =
-    worldCup.last && !worldCup.last.isNetherlandsWinner
-      ? "Oranje uitgeschakeld"
-      : "nog niet bekend";
-
   return (
     <Link
       href={worldCup.sourceUrl}
       target="_blank"
       rel="noopener noreferrer"
-      className="group mb-10 block rounded-[1.75rem] border border-orange-200/50 bg-[#ff7a00] p-5 text-black shadow-2xl shadow-black/35 transition duration-300 hover:-translate-y-0.5 hover:bg-[#ff8a14] focus:outline-none focus:ring-2 focus:ring-orange-200/70 md:p-6"
+      className="group mb-10 block rounded-[1.75rem] border border-white/10 bg-white/[0.055] p-5 shadow-2xl shadow-black/30 backdrop-blur transition duration-300 hover:-translate-y-0.5 hover:border-white/20 hover:bg-white/[0.075] focus:outline-none focus:ring-2 focus:ring-white/30 md:p-6"
     >
       <div className="mb-4 flex items-start justify-between gap-4">
         <div>
-          <div className="text-xs font-black uppercase tracking-[0.32em] text-black/55">
-            WK · Oranje
+          <div className="text-xs font-black uppercase tracking-[0.32em] text-neutral-500">
+            WK vandaag
           </div>
-          <div className="mt-1 text-3xl font-black leading-none tracking-tight text-black md:text-5xl">
-            voetbalstand
+          <div className="mt-1 text-3xl font-black leading-none tracking-tight text-neutral-50 md:text-5xl">
+            {worldCup.headline}
           </div>
         </div>
-        <div className="shrink-0 text-sm font-bold text-black/55 transition group-hover:text-black/75">
+        <div className="shrink-0 text-sm font-medium text-neutral-600 transition group-hover:text-neutral-400">
           bron{" "}
           <span className={worldCupSourceClassName(worldCup.sourceStatus)}>
             {worldCup.sourceName}
@@ -71,22 +51,10 @@ export default function WorldCupStrip({
         </div>
       </div>
 
-      <div className="rounded-[1.25rem] bg-black/[0.06] px-4">
-        <MatchLine
-          label="laatste"
-          match={worldCup.last}
-          empty="nog geen vorige wedstrijd"
-        />
-        <MatchLine
-          label="live"
-          match={worldCup.live}
-          empty="nu geen wedstrijd"
-        />
-        <MatchLine
-          label="volgende"
-          match={worldCup.next}
-          empty={nextEmpty}
-        />
+      <div className="rounded-[1.25rem] bg-black/10 px-4">
+        {worldCup.matches.map((match) => (
+          <MatchLine key={`${match.date}-${match.line}`} match={match} />
+        ))}
       </div>
     </Link>
   );
