@@ -1,3 +1,5 @@
+import cbsFuelSnapshotRows from "../../data/cbs-fuel-snapshot.json";
+
 export const runtime = "nodejs";
 
 type OpenMeteoResponse = {
@@ -136,10 +138,7 @@ const weatherSuccessTtlMs = 10 * 60 * 1000;
 const defaultSourceTimeoutMs = 1_800;
 const trafficSourceTimeoutMs = 1_500;
 const nsSourceTimeoutMs = 2_000;
-const cbsFuelFallbackRows: CbsFuelRow[] = [
-  { Perioden: "20260420", BenzineEuro95_1: 2.32 },
-  { Perioden: "20260427", BenzineEuro95_1: 2.32 },
-];
+const cbsFuelFallbackRows = cbsFuelSnapshotRows as CbsFuelRow[];
 
 const sourceCaches: Record<SourceName, SourceCache> = {
   fuel: {
