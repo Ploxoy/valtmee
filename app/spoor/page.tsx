@@ -1,4 +1,5 @@
 import DetailShell from "../components/detail-shell";
+import { SourceName } from "../components/source-status";
 import {
   getMetrics,
   getSpoorStatus,
@@ -29,7 +30,10 @@ export default async function SpoorPage() {
           <div className="mt-4 space-y-1 text-sm text-neutral-500">
             <div>{werkzaamheden} werkzaamheden</div>
             <div>{details?.totalActive ?? storingen + werkzaamheden} actieve meldingen totaal</div>
-            <div>calamiteiten apart gehouden</div>
+            <div>
+              bron <SourceName status={trains.sourceStatus}>NS</SourceName> ·
+              calamiteiten apart gehouden
+            </div>
           </div>
         </section>
 

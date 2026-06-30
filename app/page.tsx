@@ -1,5 +1,6 @@
 import Link from "next/link";
 import ShareButton from "./components/share-button";
+import { SourceAwareNote, SourceName } from "./components/source-status";
 import {
   buildSummary,
   formatShareWeather,
@@ -66,7 +67,10 @@ function FuelCard({ item }: { item: Metric }) {
 
       <div className="mt-2 space-y-1 text-sm leading-6 text-neutral-500">
         <div>Euro95 · pompprijs</div>
-        <div>CBS · laatst bekend</div>
+        <div>
+          <SourceName status={item.sourceStatus}>CBS</SourceName> · laatst
+          bekend
+        </div>
         <div>{date}</div>
       </div>
     </CardShell>
@@ -87,7 +91,11 @@ function TrafficCard({ item }: { item: Metric }) {
       <div className="mt-6 text-2xl text-neutral-200">file</div>
 
       <div className="mt-2 text-sm leading-6 text-neutral-500">
-        {item.note}
+        <SourceAwareNote
+          note={item.note}
+          source="NDW"
+          status={item.sourceStatus}
+        />
       </div>
     </CardShell>
   );
@@ -110,6 +118,10 @@ function WeatherCard({ item }: { item: Metric }) {
       <div className="mt-2 space-y-1 text-sm leading-6 text-neutral-500">
         <div>wind {weather.wind}</div>
         <div>{item.note}</div>
+        <div>
+          bron{" "}
+          <SourceName status={item.sourceStatus}>Open-Meteo</SourceName>
+        </div>
       </div>
     </CardShell>
   );
@@ -130,7 +142,10 @@ function SpoorCard({ item }: { item: Metric }) {
       <div className="mt-6 text-2xl text-neutral-200">storingen</div>
 
       <div className="mt-2 space-y-1 text-sm leading-6 text-neutral-500">
-        <div>actieve meldingen · NS</div>
+        <div>
+          actieve meldingen ·{" "}
+          <SourceName status={item.sourceStatus}>NS</SourceName>
+        </div>
         <div>{werkzaamheden} werkzaamheden</div>
       </div>
     </CardShell>
@@ -153,6 +168,12 @@ export default async function Home() {
     weatherNote: weather.note,
     storingen,
   });
+  const sources = [
+    { name: "CBS", status: data.benzine.sourceStatus },
+    { name: "Open-Meteo", status: data.weer.sourceStatus },
+    { name: "NDW", status: data.file.sourceStatus },
+    { name: "NS", status: data.storingen.sourceStatus },
+  ];
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-neutral-950 text-neutral-100">
@@ -183,7 +204,14 @@ export default async function Home() {
 
         <footer className="mt-12 flex flex-col gap-2 text-sm text-neutral-600">
           <div className="flex flex-col gap-2">
-            <span>{data.sources.join(" · ")}</span>
+            <span>
+              {sources.map((source, index) => (
+                <span key={source.name}>
+                  {index > 0 && " · "}
+                  <SourceName status={source.status}>{source.name}</SourceName>
+                </span>
+              ))}
+            </span>
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <span>experimenteel · automatisch samengevat · klik op een kaart voor meer ·</span>
               <ShareButton

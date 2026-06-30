@@ -1,5 +1,6 @@
 import DetailShell from "../components/detail-shell";
 import LocalForecast from "../components/local-forecast";
+import { SourceName } from "../components/source-status";
 import {
   getMetrics,
   getWeatherStatus,
@@ -29,6 +30,10 @@ export default async function WeerPage() {
           <div className="mt-4 space-y-1 text-sm text-neutral-500">
             <div>wind {parsed.wind}</div>
             <div>{weather.note}</div>
+            <div>
+              bron{" "}
+              <SourceName status={weather.sourceStatus}>Open-Meteo</SourceName>
+            </div>
           </div>
         </section>
 

@@ -1,4 +1,5 @@
 import DetailShell from "../components/detail-shell";
+import { SourceName } from "../components/source-status";
 import {
   formatDateWithYear,
   getMetrics,
@@ -110,7 +111,10 @@ export default async function BenzinePage() {
             laatst bekende pompprijs
           </div>
           <div className="mt-4 space-y-1 text-sm text-neutral-500">
-            <div>CBS · laatst bekend</div>
+            <div>
+              <SourceName status={fuel.sourceStatus}>CBS</SourceName> · laatst
+              bekend
+            </div>
             <div>{date}</div>
             {fuel.trend && <div>{fuel.trend}</div>}
           </div>

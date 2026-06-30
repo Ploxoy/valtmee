@@ -58,6 +58,7 @@ type MetricPayload = {
   value: string;
   note: string;
   history: SparkPoint[];
+  sourceStatus?: SourceStatus;
   trend?: string;
   details?: {
     traffic?: TrafficDetails;
@@ -76,6 +77,8 @@ type SourceCache = {
 };
 
 type SourceName = "fuel" | "traffic" | "trains" | "weather";
+
+type SourceStatus = "live" | "cache" | "fallback";
 
 type NdwTrafficRow = {
   distanceInMeters: number;
@@ -254,6 +257,13 @@ function isMetricPayload(value: unknown): value is MetricPayload {
   );
 }
 
+function withSourceStatus(
+  payload: MetricPayload,
+  sourceStatus: SourceStatus
+): MetricPayload {
+  return { ...payload, sourceStatus };
+}
+
 async function readBlobSnapshot(cache: SourceCache) {
   if (!isBlobConfigured()) return null;
 
@@ -277,7 +287,10 @@ async function writeBlobSnapshot(cache: SourceCache, payload: MetricPayload) {
   if (!isBlobConfigured()) return;
 
   try {
-    await put(cache.snapshotPath, JSON.stringify(payload), {
+    const snapshot = { ...payload };
+    delete snapshot.sourceStatus;
+
+    await put(cache.snapshotPath, JSON.stringify(snapshot), {
       access: "private",
       addRandomSuffix: false,
       allowOverwrite: true,
@@ -289,6 +302,12 @@ async function writeBlobSnapshot(cache: SourceCache, payload: MetricPayload) {
   }
 }
 
+async function seedFallbackSnapshot(name: SourceName, cache: SourceCache) {
+  if (name !== "fuel") return;
+
+  await writeBlobSnapshot(cache, cache.fallback);
+}
+
 async function resolveCachedMetric(
   name: SourceName,
   fetchMetric: () => Promise<MetricPayload>
@@ -297,7 +316,7 @@ async function resolveCachedMetric(
   const now = Date.now();
 
   if (cache.lastGood && now - cache.lastGoodAt < cache.successTtlMs) {
-    return cache.lastGood;
+    return withSourceStatus(cache.lastGood, "live");
   }
 
   if (
@@ -308,10 +327,11 @@ async function resolveCachedMetric(
 
     if (snapshot) {
       cache.lastGood = snapshot;
-      return snapshot;
+      return withSourceStatus(snapshot, "cache");
     }
 
-    return cache.fallback;
+    await seedFallbackSnapshot(name, cache);
+    return withSourceStatus(cache.fallback, "fallback");
   }
 
   try {
@@ -320,7 +340,7 @@ async function resolveCachedMetric(
     cache.lastGoodAt = Date.now();
     cache.lastFailureAt = 0;
     await writeBlobSnapshot(cache, result);
-    return result;
+    return withSourceStatus(result, "live");
   } catch (error) {
     console.error(`[metrics] ${name} live fetch failed`, error);
     cache.lastFailureAt = Date.now();
@@ -328,10 +348,11 @@ async function resolveCachedMetric(
 
     if (snapshot) {
       cache.lastGood = snapshot;
-      return snapshot;
+      return withSourceStatus(snapshot, "cache");
     }
 
-    return cache.fallback;
+    await seedFallbackSnapshot(name, cache);
+    return withSourceStatus(cache.fallback, "fallback");
   }
 }
 

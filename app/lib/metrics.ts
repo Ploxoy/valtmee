@@ -16,12 +16,16 @@ export type Metric = {
   value: string;
   note: string;
   href: string;
+  sourceStatus?: SourceStatus;
 };
+
+export type SourceStatus = "live" | "cache" | "fallback";
 
 export type MetricPayload = {
   value: string;
   note: string;
   history: SparkPoint[];
+  sourceStatus?: SourceStatus;
   trend?: string;
   details?: {
     traffic?: {
@@ -78,10 +82,30 @@ export type MetricsResponse = {
 
 export function fallbackMetrics(): MetricsResponse {
   return {
-    benzine: { value: "-", note: "niet beschikbaar", history: [] },
-    file: { value: "-", note: "niet beschikbaar", history: [] },
-    weer: { value: "-", note: "niet beschikbaar", history: [] },
-    storingen: { value: "- / -", note: "niet beschikbaar", history: [] },
+    benzine: {
+      value: "-",
+      note: "niet beschikbaar",
+      history: [],
+      sourceStatus: "fallback",
+    },
+    file: {
+      value: "-",
+      note: "niet beschikbaar",
+      history: [],
+      sourceStatus: "fallback",
+    },
+    weer: {
+      value: "-",
+      note: "niet beschikbaar",
+      history: [],
+      sourceStatus: "fallback",
+    },
+    storingen: {
+      value: "- / -",
+      note: "niet beschikbaar",
+      history: [],
+      sourceStatus: "fallback",
+    },
     sources: ["CBS", "Open-Meteo", "NDW", "NS"],
   };
 }
@@ -131,7 +155,16 @@ export function toMetric(payload: MetricPayload, href: string): Metric {
     value: payload.value,
     note: payload.note,
     href,
+    sourceStatus: payload.sourceStatus,
   };
+}
+
+export function isSourceDegraded(sourceStatus?: SourceStatus) {
+  return sourceStatus === "cache" || sourceStatus === "fallback";
+}
+
+export function sourceTextClassName(sourceStatus?: SourceStatus) {
+  return isSourceDegraded(sourceStatus) ? "text-rose-400" : undefined;
 }
 
 export function getFileStatus(fileValue: string) {

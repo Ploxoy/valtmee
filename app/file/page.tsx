@@ -1,4 +1,5 @@
 import DetailShell from "../components/detail-shell";
+import { SourceAwareNote } from "../components/source-status";
 import { getFileStatus, getMetrics, metricSources } from "../lib/metrics";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +21,13 @@ export default async function FilePage() {
             {traffic.value}
           </div>
           <div className="mt-5 text-xl text-neutral-300">totale filelengte</div>
-          <div className="mt-4 text-sm text-neutral-500">{traffic.note}</div>
+          <div className="mt-4 text-sm text-neutral-500">
+            <SourceAwareNote
+              note={traffic.note}
+              source="NDW"
+              status={traffic.sourceStatus}
+            />
+          </div>
         </section>
 
         <section className="rounded-[2rem] border border-white/10 bg-white/[0.045] p-7 shadow-2xl shadow-black/30 backdrop-blur">
