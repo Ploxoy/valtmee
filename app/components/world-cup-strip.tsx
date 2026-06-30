@@ -41,6 +41,11 @@ export default function WorldCupStrip({
 }) {
   if (!worldCup) return null;
 
+  const nextEmpty =
+    worldCup.last && !worldCup.last.isNetherlandsWinner
+      ? "Oranje uitgeschakeld"
+      : "nog niet bekend";
+
   return (
     <Link
       href={worldCup.sourceUrl}
@@ -80,7 +85,7 @@ export default function WorldCupStrip({
         <MatchLine
           label="volgende"
           match={worldCup.next}
-          empty="nog niet bekend"
+          empty={nextEmpty}
         />
       </div>
     </Link>

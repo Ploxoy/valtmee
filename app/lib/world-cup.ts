@@ -5,6 +5,7 @@ export type WorldCupMatchSlot = "last" | "live" | "next";
 
 export type WorldCupMatch = {
   date: string;
+  isNetherlandsWinner: boolean;
   line: string;
   note: string;
   slot: WorldCupMatchSlot;
@@ -29,6 +30,10 @@ type EspnEvent = {
   competitions?: Array<{
     altGameNote?: string;
     competitors?: EspnCompetitor[];
+    notes?: Array<{
+      headline?: string;
+      text?: string;
+    }>;
     status?: {
       type?: {
         completed?: boolean;
@@ -41,6 +46,7 @@ type EspnEvent = {
 type EspnCompetitor = {
   homeAway?: string;
   score?: string;
+  winner?: boolean;
   team?: {
     abbreviation?: string;
     displayName?: string;
@@ -73,6 +79,7 @@ function isWorldCupMatch(value: unknown): value is WorldCupMatch {
   const payload = value as Partial<WorldCupMatch>;
   return (
     typeof payload.date === "string" &&
+    typeof payload.isNetherlandsWinner === "boolean" &&
     typeof payload.line === "string" &&
     typeof payload.note === "string" &&
     (payload.slot === "last" || payload.slot === "live" || payload.slot === "next")
@@ -179,6 +186,14 @@ function formatAmsterdamDateTime(rawDate: string) {
   }).format(new Date(rawDate));
 }
 
+function formatAdvanceNote(note?: string) {
+  const match = note?.match(/^(.+) advance ([\\d-]+) on penalties$/i);
+
+  if (!match) return undefined;
+
+  return `${match[1]} door na penalty's (${match[2]})`;
+}
+
 function toWorldCupMatch(event: EspnEvent): WorldCupMatch | null {
   const competition = event.competitions?.[0];
   const competitors = competition?.competitors ?? [];
@@ -191,21 +206,26 @@ function toWorldCupMatch(event: EspnEvent): WorldCupMatch | null {
   const status = competition.status?.type;
   const state = status?.state ?? "pre";
   const completed = status?.completed === true;
+  const isNetherlandsWinner = netherlands.winner === true;
   const slot: WorldCupMatchSlot =
     state === "in" ? "live" : completed ? "last" : "next";
   const score =
     slot === "live" || slot === "last"
       ? `${home?.score ?? "0"}-${away?.score ?? "0"}`
       : formatAmsterdamDateTime(event.date);
+  const advanceNote = formatAdvanceNote(
+    competition.notes?.[0]?.headline ?? competition.notes?.[0]?.text
+  );
   const note =
     slot === "live"
       ? "nu bezig"
       : slot === "last"
-        ? "afgelopen"
+        ? advanceNote ?? "afgelopen"
         : `aftrap ${formatAmsterdamDateTime(event.date)}`;
 
   return {
     date: event.date,
+    isNetherlandsWinner,
     line: `${teamName(home)} - ${teamName(away)} · ${score}`,
     note,
     slot,
