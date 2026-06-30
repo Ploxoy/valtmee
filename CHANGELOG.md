@@ -7,6 +7,7 @@ Reliability and observability patch release.
 ### Reliability
 
 - Added a shared reliability pattern for external metric sources: short upstream timeouts, last-good in-memory fallback, and negative-cache cooldowns after failures.
+- Replaced framework-level stale-while-revalidate upstream caching with explicit per-source in-memory TTLs, so live metrics do not require a second refresh to show updated data.
 - Hardened CBS fuel loading so a slow or unavailable CBS endpoint no longer blocks the dashboard or renders an empty fuel card.
 - Added a static last-known CBS fuel snapshot for cold starts when CBS is unavailable.
 - Applied timeout and fallback handling to Open-Meteo, NDW, and NS metric fetches.

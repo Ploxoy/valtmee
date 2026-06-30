@@ -66,7 +66,9 @@ type SourceCache = {
   fallback: MetricPayload;
   failureCooldownMs: number;
   lastFailureAt: number;
+  lastGoodAt: number;
   lastGood: MetricPayload | null;
+  successTtlMs: number;
 };
 
 type SourceName = "fuel" | "traffic" | "trains" | "weather";
@@ -127,6 +129,10 @@ const trafficOldTimestampMs = 24 * 60 * 60 * 1000;
 const cbsFuelTotalTimeoutMs = 1_800;
 const cbsFuelRequestTimeoutMs = 1_500;
 const sourceFailureCooldownMs = 5 * 60 * 1000;
+const fuelSuccessTtlMs = 6 * 60 * 60 * 1000;
+const trafficSuccessTtlMs = 60 * 1000;
+const trainsSuccessTtlMs = 5 * 60 * 1000;
+const weatherSuccessTtlMs = 10 * 60 * 1000;
 const defaultSourceTimeoutMs = 1_800;
 const trafficSourceTimeoutMs = 1_500;
 const nsSourceTimeoutMs = 2_000;
@@ -140,25 +146,33 @@ const sourceCaches: Record<SourceName, SourceCache> = {
     fallback: buildFuelMetric(cbsFuelFallbackRows, "CBS cache"),
     failureCooldownMs: sourceFailureCooldownMs,
     lastFailureAt: 0,
+    lastGoodAt: 0,
     lastGood: null,
+    successTtlMs: fuelSuccessTtlMs,
   },
   traffic: {
     fallback: metric("—", "NDW niet beschikbaar"),
     failureCooldownMs: sourceFailureCooldownMs,
     lastFailureAt: 0,
+    lastGoodAt: 0,
     lastGood: null,
+    successTtlMs: trafficSuccessTtlMs,
   },
   trains: {
     fallback: unavailableMetric("NS niet beschikbaar"),
     failureCooldownMs: sourceFailureCooldownMs,
     lastFailureAt: 0,
+    lastGoodAt: 0,
     lastGood: null,
+    successTtlMs: trainsSuccessTtlMs,
   },
   weather: {
     fallback: metric("— / —", "Open-Meteo niet beschikbaar"),
     failureCooldownMs: sourceFailureCooldownMs,
     lastFailureAt: 0,
+    lastGoodAt: 0,
     lastGood: null,
+    successTtlMs: weatherSuccessTtlMs,
   },
 };
 
@@ -201,7 +215,7 @@ function formatAmsterdamDateTime(timestamp: number): string {
 
 async function fetchWithTimeout(
   url: string,
-  init: RequestInit & { next?: { revalidate: number } },
+  init: RequestInit,
   timeoutMs: number
 ) {
   const controller = new AbortController();
@@ -222,10 +236,15 @@ async function resolveCachedMetric(
   fetchMetric: () => Promise<MetricPayload>
 ) {
   const cache = sourceCaches[name];
+  const now = Date.now();
+
+  if (cache.lastGood && now - cache.lastGoodAt < cache.successTtlMs) {
+    return cache.lastGood;
+  }
 
   if (
     cache.lastFailureAt &&
-    Date.now() - cache.lastFailureAt < cache.failureCooldownMs
+    now - cache.lastFailureAt < cache.failureCooldownMs
   ) {
     return cache.lastGood ?? cache.fallback;
   }
@@ -233,6 +252,7 @@ async function resolveCachedMetric(
   try {
     const result = await fetchMetric();
     cache.lastGood = result;
+    cache.lastGoodAt = Date.now();
     cache.lastFailureAt = 0;
     return result;
   } catch (error) {
@@ -252,7 +272,7 @@ async function getWeather() {
 
   const res = await fetchWithTimeout(
     url,
-    { next: { revalidate: 900 } },
+    { cache: "no-store" },
     defaultSourceTimeoutMs
   );
 
@@ -321,9 +341,7 @@ async function fetchCbsFuelRows() {
 
     const res = await fetchWithTimeout(
       url,
-      {
-        next: { revalidate: 21600 },
-      },
+      { cache: "no-store" },
       Math.min(cbsFuelRequestTimeoutMs, remainingMs)
     );
 
@@ -359,7 +377,7 @@ async function getTraffic() {
 
   const res = await fetchWithTimeout(
     url,
-    { next: { revalidate: 60 } },
+    { cache: "no-store" },
     trafficSourceTimeoutMs
   );
 
@@ -543,7 +561,7 @@ async function getTrainDisruptions() {
       headers: {
         "Ocp-Apim-Subscription-Key": apiKey,
       },
-      next: { revalidate: 300 },
+      cache: "no-store",
     },
     nsSourceTimeoutMs
   );

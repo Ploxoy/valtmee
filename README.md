@@ -47,6 +47,8 @@ Data is aggregated through `GET /api/metrics` into a UI-friendly payload.
 All external metric sources should follow the same reliability rule:
 
 - use a short upstream timeout;
+- use an explicit in-memory success TTL instead of framework-level
+  stale-while-revalidate for live metrics;
 - keep the last successful in-memory metric for the current server instance;
 - use a short negative-cache cooldown after upstream failures;
 - provide a safe static or unavailable fallback so one broken source does not

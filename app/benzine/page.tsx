@@ -96,6 +96,14 @@ export default async function BenzinePage() {
             <div>{date}</div>
             {fuel.trend && <div>{fuel.trend}</div>}
           </div>
+          <a
+            href="https://www.tankje.nl/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-6 inline-flex text-sm font-medium text-neutral-300 transition hover:text-white focus:outline-none focus:ring-2 focus:ring-white/30"
+          >
+            actuele tankprijzen op tankje.nl ↗
+          </a>
         </section>
 
         <FuelChart points={fuel.history} />
