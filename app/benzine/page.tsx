@@ -10,11 +10,33 @@ export const dynamic = "force-dynamic";
 
 function FuelChart({ points }: { points: SparkPoint[] }) {
   const chartPoints = points.slice(-365);
+  const values = chartPoints.map((point) => point.value);
+  const min = values.length ? Math.min(...values) : 0;
+  const max = values.length ? Math.max(...values) : 0;
+  const range = max - min || 1;
+  const hasUsefulHistory = chartPoints.length >= 8 && max - min >= 0.005;
 
-  if (chartPoints.length < 2) {
+  if (!hasUsefulHistory) {
     return (
-      <div className="rounded-[2rem] border border-white/10 bg-white/[0.045] p-6 text-sm text-neutral-500">
-        Geen grafiek beschikbaar.
+      <div className="rounded-[2rem] border border-white/10 bg-white/[0.045] p-6 shadow-2xl shadow-black/30 backdrop-blur">
+        <div className="flex h-56 flex-col justify-between">
+          <div>
+            <div className="text-sm uppercase tracking-[0.28em] text-neutral-500">
+              Historie
+            </div>
+            <div className="mt-4 text-2xl font-black text-neutral-100">
+              tijdelijk niet beschikbaar
+            </div>
+            <p className="mt-3 max-w-sm text-sm leading-6 text-neutral-500">
+              CBS levert nu geen volledige prijsreeks. De laatste bekende
+              pompprijs blijft zichtbaar; de grafiek komt automatisch terug
+              zodra de reeks weer beschikbaar is.
+            </p>
+          </div>
+          <div className="relative h-12 overflow-hidden rounded-full border border-white/10 bg-white/[0.035]">
+            <div className="absolute left-4 right-4 top-1/2 h-px -translate-y-1/2 bg-gradient-to-r from-transparent via-neutral-500 to-transparent" />
+          </div>
+        </div>
       </div>
     );
   }
@@ -22,10 +44,6 @@ function FuelChart({ points }: { points: SparkPoint[] }) {
   const width = 720;
   const height = 240;
   const padding = 18;
-  const values = chartPoints.map((point) => point.value);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min || 1;
 
   const path = chartPoints
     .map((point, index) => {
