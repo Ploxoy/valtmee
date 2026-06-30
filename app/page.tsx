@@ -1,6 +1,7 @@
 import Link from "next/link";
 import ShareButton from "./components/share-button";
 import { SourceAwareNote, SourceName } from "./components/source-status";
+import WorldCupStrip from "./components/world-cup-strip";
 import {
   buildSummary,
   formatShareWeather,
@@ -201,6 +202,8 @@ export default async function Home() {
           <SpoorCard item={spoor} />
           <WeatherCard item={weather} />
         </div>
+
+        <WorldCupStrip />
 
         <footer className="mt-12 flex flex-col gap-2 text-sm text-neutral-600">
           <div className="flex flex-col gap-2">

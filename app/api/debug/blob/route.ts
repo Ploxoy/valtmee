@@ -55,7 +55,7 @@ export async function GET() {
   }
 
   try {
-    const result = await list({ prefix: "metrics/", limit: 50 });
+    const result = await list({ limit: 100 });
     diagnostic.list.ok = true;
     diagnostic.list.count = result.blobs.length;
     diagnostic.list.blobs = result.blobs.map((blob) => ({
