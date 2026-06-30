@@ -13,7 +13,9 @@ export type WorldCupMatch = {
 
 export type WorldCupData = {
   headline: string;
-  matches: WorldCupMatch[];
+  done: WorldCupMatch[];
+  live: WorldCupMatch[];
+  next: WorldCupMatch[];
   sourceName: string;
   sourceStatus: SourceStatus;
   sourceUrl: string;
@@ -82,8 +84,12 @@ function isWorldCupData(value: unknown): value is WorldCupData {
   const payload = value as Partial<WorldCupData>;
   return (
     typeof payload.headline === "string" &&
-    Array.isArray(payload.matches) &&
-    payload.matches.every(isWorldCupMatch) &&
+    Array.isArray(payload.done) &&
+    payload.done.every(isWorldCupMatch) &&
+    Array.isArray(payload.live) &&
+    payload.live.every(isWorldCupMatch) &&
+    Array.isArray(payload.next) &&
+    payload.next.every(isWorldCupMatch) &&
     typeof payload.sourceName === "string" &&
     typeof payload.sourceUrl === "string"
   );
@@ -132,7 +138,9 @@ async function writeSnapshot(data: WorldCupData) {
   try {
     const snapshot: Omit<WorldCupData, "sourceStatus"> = {
       headline: data.headline,
-      matches: data.matches,
+      done: data.done,
+      live: data.live,
+      next: data.next,
       sourceName: data.sourceName,
       sourceUrl: data.sourceUrl,
     };
@@ -227,7 +235,6 @@ function pickWorldCupData(events: EspnEvent[]): WorldCupData | null {
   const live = matches.filter((match) => match.slot === "live");
   const next = matches.filter((match) => match.slot === "next");
   const done = matches.filter((match) => match.slot === "done");
-  const selected = live.length ? live : next.length ? next.slice(0, 3) : done.slice(-3);
   const headline = live.length
     ? `${live.length} live wedstrijd${live.length === 1 ? "" : "en"}`
     : next.length
@@ -236,7 +243,9 @@ function pickWorldCupData(events: EspnEvent[]): WorldCupData | null {
 
   return {
     headline,
-    matches: selected,
+    done: done.slice(-2),
+    live,
+    next: next.slice(0, 3),
     sourceName: "ESPN",
     sourceStatus: "live",
     sourceUrl: espnSourceUrl,
@@ -288,12 +297,17 @@ export async function getWorldCupData(): Promise<WorldCupData | null> {
 }
 
 export function formatWorldCupShareLine(data: WorldCupData | null) {
-  if (!data || !data.matches.length) return undefined;
+  if (!data) return undefined;
 
-  const [first, ...rest] = data.matches;
-  const suffix = rest.length ? ` (+${rest.length})` : "";
+  const match = data.live[0] ?? data.next[0] ?? data.done[data.done.length - 1];
 
-  return `WK ${first.line}${suffix}`;
+  if (!match) return undefined;
+
+  const count =
+    data.live.length + data.next.length + data.done.length - 1;
+  const suffix = count > 0 ? ` (+${count})` : "";
+
+  return `WK ${match.line}${suffix}`;
 }
 
 export function worldCupSourceClassName(sourceStatus?: SourceStatus) {

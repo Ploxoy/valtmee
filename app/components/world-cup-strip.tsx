@@ -5,15 +5,30 @@ import {
   type WorldCupMatch,
 } from "../lib/world-cup";
 
-function MatchLine({ match }: { match: WorldCupMatch }) {
+function MatchLine({
+  empty,
+  label,
+  match,
+}: {
+  empty: string;
+  label: string;
+  match?: WorldCupMatch;
+}) {
   return (
-    <div className="border-t border-white/10 py-3 first:border-t-0">
-      <div className="text-xl font-black leading-tight tracking-tight text-neutral-100 md:text-2xl">
-        {match.line}
+    <div className="grid gap-1 border-t border-white/10 py-3 first:border-t-0 sm:grid-cols-[7rem_1fr] sm:gap-4">
+      <div className="text-xs font-black uppercase tracking-[0.22em] text-neutral-600">
+        {label}
       </div>
-      <div className="mt-1 text-sm font-medium text-neutral-500">
-        {match.note}
-        {match.stage ? ` · ${match.stage}` : ""}
+      <div>
+        <div className="text-xl font-black leading-tight tracking-tight text-neutral-100 md:text-2xl">
+          {match?.line ?? empty}
+        </div>
+        {match && (
+          <div className="mt-1 text-sm font-medium text-neutral-500">
+            {match.note}
+            {match.stage ? ` · ${match.stage}` : ""}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -25,6 +40,10 @@ export default function WorldCupStrip({
   worldCup: WorldCupData | null;
 }) {
   if (!worldCup) return null;
+
+  const last = worldCup.done[worldCup.done.length - 1];
+  const live = worldCup.live[0];
+  const next = worldCup.next[0];
 
   return (
     <Link
@@ -52,9 +71,9 @@ export default function WorldCupStrip({
       </div>
 
       <div className="rounded-[1.25rem] bg-black/10 px-4">
-        {worldCup.matches.map((match) => (
-          <MatchLine key={`${match.date}-${match.line}`} match={match} />
-        ))}
+        <MatchLine label="laatste" match={last} empty="nog geen uitslag" />
+        <MatchLine label="live" match={live} empty="nu geen wedstrijd" />
+        <MatchLine label="volgende" match={next} empty="nog niet bekend" />
       </div>
     </Link>
   );
