@@ -1,15 +1,23 @@
 import { get, put } from "@vercel/blob";
 import { sourceTextClassName, type SourceStatus } from "./metrics";
 
+export type WorldCupMatchSlot = "last" | "live" | "next";
+
 export type WorldCupMatch = {
   date: string;
-  label: string;
   line: string;
   note: string;
-  sourceStatus: SourceStatus;
-  sourceName: string;
-  sourceUrl: string;
+  slot: WorldCupMatchSlot;
   stage?: string;
+};
+
+export type WorldCupData = {
+  last: WorldCupMatch | null;
+  live: WorldCupMatch | null;
+  next: WorldCupMatch | null;
+  sourceName: string;
+  sourceStatus: SourceStatus;
+  sourceUrl: string;
 };
 
 type EspnScoreboard = {
@@ -24,12 +32,8 @@ type EspnEvent = {
     status?: {
       type?: {
         completed?: boolean;
-        description?: string;
         state?: string;
       };
-    };
-    venue?: {
-      fullName?: string;
     };
   }>;
 };
@@ -52,7 +56,7 @@ const requestTimeoutMs = 1_800;
 const successTtlMs = 2 * 60 * 1000;
 const failureCooldownMs = 5 * 60 * 1000;
 
-let lastGood: WorldCupMatch | null = null;
+let lastGood: WorldCupData | null = null;
 let lastGoodAt = 0;
 let lastFailureAt = 0;
 
@@ -69,19 +73,30 @@ function isWorldCupMatch(value: unknown): value is WorldCupMatch {
   const payload = value as Partial<WorldCupMatch>;
   return (
     typeof payload.date === "string" &&
-    typeof payload.label === "string" &&
     typeof payload.line === "string" &&
     typeof payload.note === "string" &&
+    (payload.slot === "last" || payload.slot === "live" || payload.slot === "next")
+  );
+}
+
+function isWorldCupData(value: unknown): value is WorldCupData {
+  if (!value || typeof value !== "object") return false;
+
+  const payload = value as Partial<WorldCupData>;
+  return (
+    (payload.last === null || isWorldCupMatch(payload.last)) &&
+    (payload.live === null || isWorldCupMatch(payload.live)) &&
+    (payload.next === null || isWorldCupMatch(payload.next)) &&
     typeof payload.sourceName === "string" &&
     typeof payload.sourceUrl === "string"
   );
 }
 
 function withSourceStatus(
-  match: WorldCupMatch,
+  data: WorldCupData,
   sourceStatus: SourceStatus
-): WorldCupMatch {
-  return { ...match, sourceStatus };
+): WorldCupData {
+  return { ...data, sourceStatus };
 }
 
 async function fetchWithTimeout(url: string, timeoutMs: number) {
@@ -107,25 +122,23 @@ async function readSnapshot() {
     if (!result || result.statusCode !== 200) return null;
 
     const payload = (await new Response(result.stream).json()) as unknown;
-    return isWorldCupMatch(payload) ? payload : null;
+    return isWorldCupData(payload) ? payload : null;
   } catch (error) {
     console.error("[world-cup] Blob snapshot read failed", error);
     return null;
   }
 }
 
-async function writeSnapshot(match: WorldCupMatch) {
+async function writeSnapshot(data: WorldCupData) {
   if (!isBlobConfigured()) return;
 
   try {
-    const snapshot: Omit<WorldCupMatch, "sourceStatus"> = {
-      date: match.date,
-      label: match.label,
-      line: match.line,
-      note: match.note,
-      sourceName: match.sourceName,
-      sourceUrl: match.sourceUrl,
-      stage: match.stage,
+    const snapshot: Omit<WorldCupData, "sourceStatus"> = {
+      last: data.last,
+      live: data.live,
+      next: data.next,
+      sourceName: data.sourceName,
+      sourceUrl: data.sourceUrl,
     };
 
     await put(snapshotPath, JSON.stringify(snapshot), {
@@ -178,54 +191,54 @@ function toWorldCupMatch(event: EspnEvent): WorldCupMatch | null {
   const status = competition.status?.type;
   const state = status?.state ?? "pre";
   const completed = status?.completed === true;
+  const slot: WorldCupMatchSlot =
+    state === "in" ? "live" : completed ? "last" : "next";
   const score =
-    state !== "pre" || completed
+    slot === "live" || slot === "last"
       ? `${home?.score ?? "0"}-${away?.score ?? "0"}`
       : formatAmsterdamDateTime(event.date);
-  const label =
-    state === "in"
-      ? "oranje live"
-      : completed
-        ? "laatste oranje"
-        : "volgende oranje";
-  const opponent = competitors.find((item) => !isNetherlands(item));
-  const opponentName = teamName(opponent);
   const note =
-    state === "in"
+    slot === "live"
       ? "nu bezig"
-      : completed
+      : slot === "last"
         ? "afgelopen"
         : `aftrap ${formatAmsterdamDateTime(event.date)}`;
 
   return {
     date: event.date,
-    label,
     line: `${teamName(home)} - ${teamName(away)} · ${score}`,
-    note: `${note} · tegen ${opponentName}`,
-    sourceName: "ESPN",
-    sourceStatus: "live",
-    sourceUrl: espnSourceUrl,
+    note,
+    slot,
     stage: competition.altGameNote,
   };
 }
 
-function pickOranjeMatch(events: EspnEvent[]) {
+function pickOranjeData(events: EspnEvent[]): WorldCupData | null {
   const now = Date.now();
   const matches = events
     .map(toWorldCupMatch)
     .filter((match): match is WorldCupMatch => Boolean(match))
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-  const live = matches.find((match) => match.label === "oranje live");
-  if (live) return live;
+  if (!matches.length) return null;
 
-  const next = matches.find((match) => new Date(match.date).getTime() >= now);
-  if (next) return next;
+  const live = matches.find((match) => match.slot === "live") ?? null;
+  const past = matches.filter((match) => match.slot === "last");
+  const future = matches.filter(
+    (match) => match.slot === "next" && new Date(match.date).getTime() >= now
+  );
 
-  return matches[matches.length - 1] ?? null;
+  return {
+    last: past[past.length - 1] ?? null,
+    live,
+    next: future.find((match) => match.slot !== "live") ?? null,
+    sourceName: "ESPN",
+    sourceStatus: "live",
+    sourceUrl: espnSourceUrl,
+  };
 }
 
-async function fetchWorldCupMatch() {
+async function fetchWorldCupData() {
   const res = await fetchWithTimeout(espnScoreboardUrl, requestTimeoutMs);
 
   if (!res.ok) {
@@ -233,16 +246,16 @@ async function fetchWorldCupMatch() {
   }
 
   const data = (await res.json()) as EspnScoreboard;
-  const match = pickOranjeMatch(data.events ?? []);
+  const worldCup = pickOranjeData(data.events ?? []);
 
-  if (!match) {
+  if (!worldCup) {
     throw new Error("No Oranje match found in ESPN World Cup scoreboard");
   }
 
-  return match;
+  return worldCup;
 }
 
-export async function getWorldCupMatch(): Promise<WorldCupMatch | null> {
+export async function getWorldCupData(): Promise<WorldCupData | null> {
   const now = Date.now();
 
   if (lastGood && now - lastGoodAt < successTtlMs) {
@@ -255,18 +268,30 @@ export async function getWorldCupMatch(): Promise<WorldCupMatch | null> {
   }
 
   try {
-    const match = await fetchWorldCupMatch();
-    lastGood = match;
+    const data = await fetchWorldCupData();
+    lastGood = data;
     lastGoodAt = Date.now();
     lastFailureAt = 0;
-    await writeSnapshot(match);
-    return withSourceStatus(match, "live");
+    await writeSnapshot(data);
+    return withSourceStatus(data, "live");
   } catch (error) {
     console.error("[world-cup] live fetch failed", error);
     lastFailureAt = Date.now();
     const snapshot = lastGood ?? (await readSnapshot());
     return snapshot ? withSourceStatus(snapshot, "cache") : null;
   }
+}
+
+export function formatWorldCupShareLine(data: WorldCupData | null) {
+  if (!data) return undefined;
+
+  const parts = [
+    data.last ? `laatste ${data.last.line}` : null,
+    data.live ? `live ${data.live.line}` : null,
+    data.next ? `volgende ${data.next.line}` : null,
+  ].filter(Boolean);
+
+  return parts.length ? `WK Oranje: ${parts.join(" · ")}` : undefined;
 }
 
 export function worldCupSourceClassName(sourceStatus?: SourceStatus) {

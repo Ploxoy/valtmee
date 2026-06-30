@@ -1,10 +1,10 @@
-import { getWorldCupMatch } from "../../lib/world-cup";
+import { getWorldCupData } from "../../lib/world-cup";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const match = await getWorldCupMatch();
+  const worldCup = await getWorldCupData();
 
-  return Response.json({ match });
+  return Response.json({ worldCup });
 }
