@@ -1,8 +1,6 @@
 import Link from "next/link";
 import ShareButton from "./components/share-button";
 import { SourceAwareNote, SourceName } from "./components/source-status";
-import WorldCupStrip from "./components/world-cup-strip";
-import { formatWorldCupShareLine, getWorldCupData } from "./lib/world-cup";
 import {
   buildSummary,
   formatShareWeather,
@@ -155,10 +153,7 @@ function SpoorCard({ item }: { item: Metric }) {
 }
 
 export default async function Home() {
-  const [data, worldCup] = await Promise.all([
-    getMetrics(),
-    getWorldCupData(),
-  ]);
+  const data = await getMetrics();
 
   const fuel = toMetric(data.benzine, "/benzine");
   const traffic = toMetric(data.file, "/file");
@@ -179,7 +174,6 @@ export default async function Home() {
     { name: "NDW", status: data.file.sourceStatus },
     { name: "NS", status: data.storingen.sourceStatus },
   ];
-  const football = formatWorldCupShareLine(worldCup);
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-neutral-950 text-neutral-100">
@@ -187,8 +181,6 @@ export default async function Home() {
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_bottom,transparent,rgba(0,0,0,0.45))]" />
 
       <section className="relative mx-auto flex min-h-screen w-full max-w-6xl flex-col justify-center px-6 py-16">
-        <WorldCupStrip worldCup={worldCup} />
-
         <header className="mb-14">
           <p className="text-sm uppercase tracking-[0.45em] text-neutral-500">
             de stand van vandaag
@@ -223,7 +215,6 @@ export default async function Home() {
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <span>experimenteel · automatisch samengevat · klik op een kaart voor meer ·</span>
               <ShareButton
-                football={football}
                 summary={summary}
                 fuel={fuel.value}
                 traffic={traffic.value}

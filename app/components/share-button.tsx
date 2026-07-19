@@ -3,7 +3,6 @@
 import { useState } from "react";
 
 type ShareButtonProps = {
-  football?: string;
   summary: string;
   weather: string;
   fuel: string;
@@ -20,7 +19,6 @@ function receiptLine(label: string, value: string) {
 }
 
 function buildReceipt({
-  football,
   summary,
   weather,
   fuel,
@@ -32,7 +30,6 @@ function buildReceipt({
     "        valtmee.nl",
     "         DAGBON",
     "************************",
-    ...(football ? [football] : []),
     receiptLine("BENZINE", fuel),
     receiptLine("FILE", traffic),
     receiptLine("SPOOR", trains),
