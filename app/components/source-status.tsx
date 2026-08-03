@@ -1,7 +1,7 @@
 import {
   sourceTextClassName,
   type SourceStatus,
-} from "../lib/metrics";
+} from "../lib/metrics-shared";
 
 export function SourceName({
   children,
