@@ -72,7 +72,7 @@ type SourceCache = {
   lastFailureAt: number;
   lastGoodAt: number;
   lastGood: MetricPayload | null;
-  snapshotPath: string;
+  snapshotPath?: string;
   successTtlMs: number;
 };
 
@@ -143,6 +143,7 @@ const weatherSuccessTtlMs = 10 * 60 * 1000;
 const defaultSourceTimeoutMs = 1_800;
 const trafficSourceTimeoutMs = 1_500;
 const nsSourceTimeoutMs = 2_000;
+const blobTimeoutMs = 1_000;
 const cbsFuelFallbackRows = cbsFuelSnapshotRows as CbsFuelRow[];
 
 const sourceCaches: Record<SourceName, SourceCache> = {
@@ -161,7 +162,6 @@ const sourceCaches: Record<SourceName, SourceCache> = {
     lastFailureAt: 0,
     lastGoodAt: 0,
     lastGood: null,
-    snapshotPath: "metrics/traffic/latest.json",
     successTtlMs: trafficSuccessTtlMs,
   },
   trains: {
@@ -170,7 +170,6 @@ const sourceCaches: Record<SourceName, SourceCache> = {
     lastFailureAt: 0,
     lastGoodAt: 0,
     lastGood: null,
-    snapshotPath: "metrics/trains/latest.json",
     successTtlMs: trainsSuccessTtlMs,
   },
   weather: {
@@ -179,7 +178,6 @@ const sourceCaches: Record<SourceName, SourceCache> = {
     lastFailureAt: 0,
     lastGoodAt: 0,
     lastGood: null,
-    snapshotPath: "metrics/weather/latest.json",
     successTtlMs: weatherSuccessTtlMs,
   },
 };
@@ -265,10 +263,13 @@ function withSourceStatus(
 }
 
 async function readBlobSnapshot(cache: SourceCache) {
-  if (!isBlobConfigured()) return null;
+  if (!cache.snapshotPath || !isBlobConfigured()) return null;
 
   try {
-    const result = await get(cache.snapshotPath, { access: "private" });
+    const result = await get(cache.snapshotPath, {
+      access: "private",
+      abortSignal: AbortSignal.timeout(blobTimeoutMs),
+    });
 
     if (!result || result.statusCode !== 200) {
       return null;
@@ -284,9 +285,26 @@ async function readBlobSnapshot(cache: SourceCache) {
 }
 
 async function writeBlobSnapshot(cache: SourceCache, payload: MetricPayload) {
-  if (!isBlobConfigured()) return;
+  if (!cache.snapshotPath || !isBlobConfigured()) return;
 
   try {
+    // Never replace a newer snapshot, or write when the existing one cannot be read.
+    const existing = await get(cache.snapshotPath, {
+      access: "private",
+      abortSignal: AbortSignal.timeout(blobTimeoutMs),
+    });
+    if (existing && existing.statusCode !== 200) return;
+
+    if (existing) {
+      const previous = (await new Response(existing.stream).json()) as unknown;
+      if (!isMetricPayload(previous)) return;
+
+      const previousDate = previous.history.at(-1)?.date;
+      const nextDate = payload.history.at(-1)?.date;
+      if (!nextDate || (previousDate && previousDate > nextDate)) return;
+      if (JSON.stringify(previous.history) === JSON.stringify(payload.history)) return;
+    }
+
     const snapshot = { ...payload };
     delete snapshot.sourceStatus;
 
@@ -296,16 +314,11 @@ async function writeBlobSnapshot(cache: SourceCache, payload: MetricPayload) {
       allowOverwrite: true,
       cacheControlMaxAge: 60,
       contentType: "application/json",
+      abortSignal: AbortSignal.timeout(blobTimeoutMs),
     });
   } catch (error) {
     console.error(`[metrics] Blob snapshot write failed: ${cache.snapshotPath}`, error);
   }
-}
-
-async function seedFallbackSnapshot(name: SourceName, cache: SourceCache) {
-  if (name !== "fuel") return;
-
-  await writeBlobSnapshot(cache, cache.fallback);
 }
 
 async function resolveCachedMetric(
@@ -330,7 +343,6 @@ async function resolveCachedMetric(
       return withSourceStatus(snapshot, "cache");
     }
 
-    await seedFallbackSnapshot(name, cache);
     return withSourceStatus(cache.fallback, "fallback");
   }
 
@@ -351,7 +363,6 @@ async function resolveCachedMetric(
       return withSourceStatus(snapshot, "cache");
     }
 
-    await seedFallbackSnapshot(name, cache);
     return withSourceStatus(cache.fallback, "fallback");
   }
 }

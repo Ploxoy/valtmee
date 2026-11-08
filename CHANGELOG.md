@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Reduced Vercel Blob usage by retaining durable snapshots only for fuel, and
+  writing them only when the history changes.
+- Prevented static fuel fallback data from overwriting a saved snapshot and
+  added timeouts to Blob operations.
+- Kept traffic, rail, and weather fallbacks in server-instance memory rather
+  than persisting their short-lived data to Blob.
+
 ## v0.1.1 - 2026-05-07
 
 Reliability and observability patch release.

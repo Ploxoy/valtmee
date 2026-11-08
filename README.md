@@ -50,8 +50,7 @@ All external metric sources should follow the same reliability rule:
 - use an explicit in-memory success TTL instead of framework-level
   stale-while-revalidate for live metrics;
 - keep the last successful in-memory metric for the current server instance;
-- persist successful metric snapshots to Vercel Blob when Blob is configured;
-- read the latest Blob snapshot on cold starts or live-source failures;
+- use durable storage selectively for data worth retaining across cold starts;
 - use a short negative-cache cooldown after upstream failures;
 - provide a safe static or unavailable fallback so one broken source does not
   block the full dashboard.
@@ -76,9 +75,8 @@ CBS requests have a short timeout and a fallback path. If the live CBS endpoint
 is slow or unavailable, the app returns the last successful in-memory fuel
 metric for the current server instance. After a CBS failure, the app uses a
 short negative-cache cooldown so every request does not wait on the broken
-upstream. On a cold start without a successful CBS response, it falls back to a
-static last-known CBS snapshot so the dashboard does not block or render an
-empty fuel card.
+upstream. On a cold start without a successful CBS response, it tries the fuel
+snapshot in Vercel Blob, then falls back to the static last-known CBS snapshot.
 
 ### `/file`
 
@@ -188,9 +186,11 @@ To collect data in production:
 
 ## Vercel Blob Snapshots
 
-The app can persist metric snapshots through `@vercel/blob`.
+The app can persist the fuel history through `@vercel/blob`. Traffic, rail and
+weather use per-instance memory only, because their snapshots quickly become
+outdated and frequent Blob writes can exhaust the Hobby plan quota.
 
-Snapshot fallback order:
+Fuel fallback order:
 
 1. live upstream data;
 2. in-memory last-good data for the current server instance;
@@ -203,12 +203,11 @@ To enable durable snapshots in production:
 2. Connect it to the Vercel project so Blob environment variables are available.
 3. Deploy the app.
 
-The current snapshot paths are:
-
-- `metrics/fuel/latest.json`
-- `metrics/weather/latest.json`
-- `metrics/traffic/latest.json`
-- `metrics/trains/latest.json`
+The snapshot path is `metrics/fuel/latest.json`. A successful CBS response is
+written only if its history differs from the stored snapshot and is not older.
+Static fallback data is never written to Blob. Blob operations have short
+timeouts; if the existing snapshot cannot be read, it is not overwritten.
+Older traffic, rail and weather blobs are no longer used.
 
 If Blob is not configured, the app continues to work with in-memory and static
 fallbacks.
